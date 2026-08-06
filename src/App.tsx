@@ -356,7 +356,7 @@ export default function App() {
       />
 
       {/* Main Body Stage */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 pb-16 sm:pb-20 space-y-6">
         
         {/* Main Player Area or Empty State */}
         {activeChannel ? (
@@ -406,8 +406,8 @@ export default function App() {
                 <div className="w-8 h-8 rounded-lg bg-rose-600/20 text-rose-400 border border-rose-500/30 flex items-center justify-center">
                   <Tv className="w-4 h-4" />
                 </div>
-                <h2 className="text-lg sm:text-xl font-black tracking-tight text-white">
-                  {showFavoritesOnly ? t.favoriteChannels : t.featuredChannels}
+                <h2 className="text-lg sm:text-xl font-black text-white">
+                  <bdi dir="auto">{showFavoritesOnly ? t.favoriteChannels : t.featuredChannels}</bdi>
                 </h2>
               </div>
 

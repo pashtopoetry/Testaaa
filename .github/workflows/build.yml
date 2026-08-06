@@ -32,15 +32,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm install
 
       - name: Build project
         run: npm run build
 
-      - name: Upload dist artifact
+      - name: Upload dist folder as artifact
         uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -62,5 +61,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-

@@ -92,8 +92,8 @@ export const Header: React.FC<HeaderProps> = ({
               
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-black tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
-                    {t.siteName}
+                  <h1 className="text-xl sm:text-2xl font-black bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
+                    <bdi dir="auto">{t.siteName}</bdi>
                   </h1>
                 </div>
                 <p className="text-xs text-slate-400 font-medium hidden sm:block">
