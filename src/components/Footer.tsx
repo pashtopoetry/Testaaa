@@ -18,7 +18,7 @@ export const Footer: React.FC<FooterProps> = ({ language, onSelectCategory, tota
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
         
         {/* Top Section */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           
           {/* Brand Col */}
           <div className="space-y-3 md:col-span-1">
@@ -64,6 +64,25 @@ export const Footer: React.FC<FooterProps> = ({ language, onSelectCategory, tota
                 <button onClick={() => onSelectCategory('radio')} className="hover:text-rose-400 transition">
                   {t.catRadio}
                 </button>
+              </li>
+            </ul>
+          </div>
+
+          {/* Satellite Information */}
+          <div>
+            <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider mb-3">د سټلایټ فریکونسۍ (Satellite EPG)</h4>
+            <ul className="space-y-2 text-xs font-mono text-slate-400">
+              <li className="flex items-center justify-between bg-slate-900 p-2 rounded-lg border border-slate-800">
+                <span>Yahsat 52.5°E</span>
+                <span className="text-amber-400">12015 H 27500</span>
+              </li>
+              <li className="flex items-center justify-between bg-slate-900 p-2 rounded-lg border border-slate-800">
+                <span>Eutelsat 53°E</span>
+                <span className="text-amber-400">11470 V 27500</span>
+              </li>
+              <li className="flex items-center justify-between bg-slate-900 p-2 rounded-lg border border-slate-800">
+                <span>Express 80°E</span>
+                <span className="text-amber-400">10982 V 33000</span>
               </li>
             </ul>
           </div>

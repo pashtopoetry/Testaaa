@@ -579,10 +579,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
             <div className="space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-xl sm:text-2xl font-black text-white">
-                  <bdi dir="auto">
-                    {language === 'dr' && channel.nameDr ? channel.nameDr : language === 'en' && channel.nameEn ? channel.nameEn : channel.name}
-                  </bdi>
+                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                  {language === 'dr' && channel.nameDr ? channel.nameDr : language === 'en' && channel.nameEn ? channel.nameEn : channel.name}
                 </h2>
                 <span className="bg-rose-500/10 text-rose-400 text-xs font-bold px-2.5 py-0.5 rounded-lg border border-rose-500/20">
                   {channel.location}
