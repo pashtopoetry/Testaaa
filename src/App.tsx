@@ -66,7 +66,7 @@ export default function App() {
   const [showFavoritesOnly, setShowFavoritesOnly] = useState<boolean>(false);
   
   const [activeQuality, setActiveQuality] = useState<string>('Auto');
-  const [isRadioAudioPlaying, setIsRadioAudioPlaying] = useState<boolean>(true);
+  const [isRadioAudioPlaying, setIsRadioAudioPlaying] = useState<boolean>(false);
 
   // Favorites state persisted in localStorage
   const [favorites, setFavorites] = useState<string[]>(() => {

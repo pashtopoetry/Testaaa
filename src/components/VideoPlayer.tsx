@@ -47,7 +47,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
 
-  const [isPlaying, setIsPlaying] = useState<boolean>(true);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [volume, setVolume] = useState<number>(0.9);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -131,7 +131,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           setPlayerServer('fallback');
           if (channel.fallbackStreamUrl) {
             video.src = channel.fallbackStreamUrl;
-            video.play().catch(() => {});
+            if (isPlaying) {
+              video.play().catch(() => {});
+            }
           } else if (channel.iframeUrl) {
             setPlayerServer('iframe');
           } else {
@@ -142,14 +144,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     } else if (video.canPlayType('application/vnd.apple.mpegurl') && streamToPlay.endsWith('.m3u8')) {
       // Native Safari HLS
       video.src = streamToPlay;
-      video.play().catch(() => {});
+      if (isPlaying) {
+        video.play().catch(() => {});
+      }
     } else {
       // Fallback HTML5 video
       const targetSrc = channel.fallbackStreamUrl || streamToPlay;
       video.src = targetSrc;
-      video.play().catch(() => {
-        setIsPlaying(false);
-      });
+      if (isPlaying) {
+        video.play().catch(() => {
+          setIsPlaying(false);
+        });
+      }
     }
 
     return () => {
@@ -287,7 +293,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               ref={videoRef}
               className="w-full h-full object-contain cursor-pointer"
               playsInline
-              autoPlay
               loop
               poster={channel.bannerImg || channel.logo}
               onClick={togglePlay}
