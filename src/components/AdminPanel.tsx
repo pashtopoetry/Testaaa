@@ -24,12 +24,13 @@ import {
   Bot,
   Zap,
   Sparkles,
-  Users
+  Users,
+  Crown
 } from 'lucide-react';
 import { afghanChannels } from '../data/channels';
 import { auth, db } from '../lib/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 
 interface AdminPanelProps {
   isOpen: boolean;
@@ -190,9 +191,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [adminCategoryFilter, setAdminCategoryFilter] = useState<string>('all');
   const [plans, setPlans] = useState(() => {
     return JSON.parse(localStorage.getItem('zama_plans_config') || JSON.stringify([
-      { name: '1 Month Standard VIP', price: '150 AFN', days: 30 },
-      { name: '3 Months Savings VIP', price: '350 AFN', days: 90 },
-      { name: '12 Months Ultra Gold VIP', price: '999 AFN', days: 365 }
+      { id: '1-month', name: '۱ میاشت VIP', price: '150 AFN', days: 30, tag: 'عادي', description: '۳۰ ورځې بې له اعلاناتو د ۴کا سټریم درلودل' },
+      { id: '3-months', name: '۳ میاشتې VIP', price: '350 AFN', days: 90, tag: 'مشهور 🔥', description: '۹۰ ورځې بې خنډه سټریم او د ټولو نویو فلمونو ننداره' },
+      { id: '1-year', name: '۱ کال VIP', price: '999 AFN', days: 365, tag: 'غوره بیه 👑', description: '۳۶۵ ورځې د سرو زرو اکونټ له ۵۰٪ تخفیف سره' }
     ]));
   });
 
@@ -201,6 +202,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     updatedPlans[index] = { ...updatedPlans[index], [field]: value };
     setPlans(updatedPlans);
     localStorage.setItem('zama_plans_config', JSON.stringify(updatedPlans));
+    setActionNotice(language === 'en' ? 'Plan updated successfully!' : 'د پلان مشخصات بدلون وموند او خوندي شو!');
+    setTimeout(() => setActionNotice(''), 2000);
+  };
+
+  const handleAddPlan = () => {
+    const newPlan = {
+      id: `plan-${Date.now()}`,
+      name: '۶ میاشتې VIP',
+      price: '600 AFN',
+      days: 180,
+      tag: 'ویژه 🌟',
+      description: '۱۸۰ ورځې بې خنډه VIP لاسرسی'
+    };
+    const updated = [...plans, newPlan];
+    setPlans(updated);
+    localStorage.setItem('zama_plans_config', JSON.stringify(updated));
+    setActionNotice(language === 'en' ? 'New VIP Plan added!' : 'نوی VIP پلان په بریالیتوب اضافه شو!');
+    setTimeout(() => setActionNotice(''), 2500);
+  };
+
+  const handleDeletePlan = (index: number) => {
+    if (window.confirm(language === 'en' ? 'Are you sure you want to delete this plan?' : 'ایا باوري یاست چې دا VIP پلان پاکول غواړئ؟')) {
+      const updated = plans.filter((_: any, i: number) => i !== index);
+      setPlans(updated);
+      localStorage.setItem('zama_plans_config', JSON.stringify(updated));
+      setActionNotice(language === 'en' ? 'Plan deleted successfully.' : 'پلان پاک شو.');
+      setTimeout(() => setActionNotice(''), 2500);
+    }
   };
 
   // Load VIP Tickets, Pending Payments, Users, Reports
@@ -238,12 +267,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setTimeout(() => setActionNotice(''), 2500);
   };
 
-  const handleApproveTicket = (ticketId: string, ticketIdentifier: string) => {
+  const handleApproveTicket = async (ticketId: string, ticketIdentifier: string) => {
     const tickets = JSON.parse(localStorage.getItem('zama_vip_tickets') || '[]');
     const targetTicket = tickets.find((t: any) => t.id === ticketId);
     const updatedTickets = tickets.map((t: any) => t.id === ticketId ? { ...t, status: 'approved' } : t);
     localStorage.setItem('zama_vip_tickets', JSON.stringify(updatedTickets));
     setVipTickets(updatedTickets);
+
+    try {
+      await setDoc(doc(db, 'vip_tickets', ticketId), { status: 'approved' }, { merge: true });
+    } catch (e) {}
 
     const daysToAdd = targetTicket?.days || 30;
     const now = new Date();
@@ -258,7 +291,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       (u.username === ticketIdentifier || u.email === ticketIdentifier);
       if (isMatch) {
         userFound = true;
-        return {
+        const updated = {
           ...u,
           isVip: true,
           hasPendingVip: false,
@@ -266,6 +299,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           vipExpiresAt: expiryDate.toISOString(),
           vipExpiry: expiryDate.toISOString().split('T')[0]
         };
+        if (u.id) {
+          setDoc(doc(db, 'users', u.id), updated, { merge: true }).catch(() => {});
+        }
+        return updated;
       }
       return u;
     });
@@ -286,6 +323,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         createdAt: now.toISOString()
       };
       updatedUsers.push(newVipUser);
+      setDoc(doc(db, 'users', newVipUser.id), newVipUser, { merge: true }).catch(() => {});
     }
 
     localStorage.setItem('zama_users', JSON.stringify(updatedUsers));
@@ -309,14 +347,54 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setTimeout(() => setActionNotice(''), 3000);
   };
 
-  const handleDeclineTicket = (ticketId: string) => {
+  const handleDeclineTicket = async (ticketId: string) => {
     const tickets = JSON.parse(localStorage.getItem('zama_vip_tickets') || '[]');
     const updatedTickets = tickets.map((t: any) => t.id === ticketId ? { ...t, status: 'declined' } : t);
     localStorage.setItem('zama_vip_tickets', JSON.stringify(updatedTickets));
     setVipTickets(updatedTickets);
 
+    try {
+      await setDoc(doc(db, 'vip_tickets', ticketId), { status: 'declined' }, { merge: true });
+    } catch (e) {}
+
     setActionNotice(language === 'en' ? 'VIP request declined.' : 'د VIP غړیتوب غوښتنه رد شوه.');
     setTimeout(() => setActionNotice(''), 2500);
+  };
+
+  const handleDeleteTicket = async (ticketId: string) => {
+    if (window.confirm(language === 'en' ? 'Are you sure you want to delete this ticket?' : 'ایا باوري یاست چې دا غوښتنه (ټکټ) پاکول غواړئ؟')) {
+      const tickets = JSON.parse(localStorage.getItem('zama_vip_tickets') || '[]');
+      const updatedTickets = tickets.filter((t: any) => t.id !== ticketId);
+      localStorage.setItem('zama_vip_tickets', JSON.stringify(updatedTickets));
+      setVipTickets(updatedTickets);
+
+      try {
+        await deleteDoc(doc(db, 'vip_tickets', ticketId));
+      } catch (e) {
+        // silent catch
+      }
+
+      setActionNotice(language === 'en' ? 'Ticket deleted successfully.' : 'د غوښتنې ټکټ په بریالیتوب سره پاک شو.');
+      setTimeout(() => setActionNotice(''), 2500);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (window.confirm(language === 'en' ? 'Are you sure you want to delete this user?' : 'ایا باوري یاست چې دا اکونټ/کاروونکی حذفول غواړئ؟')) {
+      const users = JSON.parse(localStorage.getItem('zama_users') || '[]');
+      const updatedUsers = users.filter((u: any) => u.id !== userId && u.email !== userId);
+      localStorage.setItem('zama_users', JSON.stringify(updatedUsers));
+      setUsersList(updatedUsers);
+
+      try {
+        await deleteDoc(doc(db, 'users', userId));
+      } catch (e) {
+        // silent catch
+      }
+
+      setActionNotice(language === 'en' ? 'User deleted successfully.' : 'کاروونکی (اکونټ) په بریالیتوب سره حذف شو.');
+      setTimeout(() => setActionNotice(''), 2500);
+    }
   };
 
   // Channel Form Fields
@@ -839,24 +917,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                       </div>
 
-                      {/* Approval Actions */}
-                      {ticket.status === 'pending' && (
-                        <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                          <button
-                            onClick={() => handleDeclineTicket(ticket.id)}
-                            className="px-3 py-1.5 text-xs font-extrabold rounded-lg bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 transition"
-                          >
-                            ❌ رد کړه
-                          </button>
-                          <button
-                            onClick={() => handleApproveTicket(ticket.id, ticket.userEmail || ticket.userName || ticket.username)}
-                            className="px-4 py-1.5 text-xs font-black rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow shadow-emerald-950 transition flex items-center gap-1"
-                          >
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            <span>✓ تایید او VIP کړه</span>
-                          </button>
-                        </div>
-                      )}
+                      {/* Approval Actions & Delete Ticket */}
+                      <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
+                        {ticket.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => handleDeclineTicket(ticket.id)}
+                              className="px-3 py-1.5 text-xs font-extrabold rounded-lg bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 transition"
+                            >
+                              ❌ رد کړه
+                            </button>
+                            <button
+                              onClick={() => handleApproveTicket(ticket.id, ticket.userEmail || ticket.userName || ticket.username)}
+                              className="px-4 py-1.5 text-xs font-black rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow shadow-emerald-950 transition flex items-center gap-1"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              <span>✓ تایید او VIP کړه</span>
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => handleDeleteTicket(ticket.id)}
+                          className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/80 transition flex items-center gap-1"
+                          title="دا غوښتنه ډیلیټ کړه"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف غوښتنه</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Transaction & Payment Screenshot Details */}
@@ -1027,12 +1115,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             {user.isVip && (
                               <button
                                 onClick={() => handleRevokeVip(user.id)}
-                                className="px-2 py-1 bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-900/60 rounded text-[10px] font-bold transition"
+                                className="px-2 py-1 bg-amber-950/60 hover:bg-amber-900 text-amber-300 border border-amber-900/60 rounded text-[10px] font-bold transition"
                                 title="VIP لغوه کول"
                               >
-                                لغوه
+                                لغوه VIP
                               </button>
                             )}
+                            <button
+                              onClick={() => handleDeleteUser(user.id)}
+                              className="px-2 py-1 bg-rose-600/90 hover:bg-rose-500 text-white rounded text-[10px] font-extrabold transition shadow flex items-center gap-1 shrink-0"
+                              title="کاروونکی (یوزر) ډیلیټ کړه"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>حذف</span>
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1051,37 +1147,98 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         ) : adminTab === 'plansConfig' ? (
           /* =========================================================================
-             👑 PLANS CONFIGURATION TAB
+             👑 PLANS CONFIGURATION & EDITING TAB
              ========================================================================= */
-          <div className="space-y-4">
-            <h3 className="text-sm font-black text-white flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-amber-400" />
-              <span>د پلانونو تنظیمات (Plans Configuration)</span>
-            </h3>
-            
-            <div className="grid grid-cols-1 gap-4">
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-black text-white flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-400" />
+                  <span>د VIP پلانونو او بیو ایډیټ کول (VIP Plans Management)</span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  دلته تاسو کولی شئ د زما ټلویزیون د VIP پلانونو نومونه، بیې، د ورځو شمیرې او باجونه/ټاګونه تغییر، نوي یا حذف کړئ.
+                </p>
+              </div>
+
+              <button
+                onClick={handleAddPlan}
+                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs rounded-xl transition shadow-lg flex items-center gap-1.5 shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ نوی VIP پلان اضافه کړئ</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {plans.map((plan: any, index: number) => (
-                <div key={index} className="p-4 rounded-xl border border-slate-800 bg-slate-950/40 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <input 
-                      value={plan.name}
-                      onChange={(e) => handleUpdatePlan(index, 'name', e.target.value)}
-                      className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                      placeholder="Plan Name"
-                    />
-                    <input 
-                      value={plan.price}
-                      onChange={(e) => handleUpdatePlan(index, 'price', e.target.value)}
-                      className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                      placeholder="Price"
-                    />
-                    <input 
-                      type="number"
-                      value={plan.days}
-                      onChange={(e) => handleUpdatePlan(index, 'days', parseInt(e.target.value))}
-                      className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                      placeholder="Days"
-                    />
+                <div key={plan.id || index} className="p-4 rounded-2xl border-2 border-slate-800 hover:border-amber-500/40 bg-slate-950/60 space-y-3.5 transition shadow-lg relative group">
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                    <span className="text-xs font-black text-amber-400 flex items-center gap-1">
+                      <Crown className="w-4 h-4" />
+                      <span>پلان #{index + 1}</span>
+                    </span>
+
+                    <button
+                      onClick={() => handleDeletePlan(index)}
+                      className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs transition"
+                      title="پلان حذف کړه"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">د پلان نوم (Plan Name)</label>
+                      <input 
+                        value={plan.name || ''}
+                        onChange={(e) => handleUpdatePlan(index, 'name', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                        placeholder="مثلا: ۱ میاشت VIP"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">قیمت (Price)</label>
+                      <input 
+                        value={plan.price || ''}
+                        onChange={(e) => handleUpdatePlan(index, 'price', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+                        placeholder="مثلا: 150 AFN"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">د فعالیت مود/ورځې (Days)</label>
+                      <input 
+                        type="number"
+                        value={plan.days || 30}
+                        onChange={(e) => handleUpdatePlan(index, 'days', parseInt(e.target.value) || 0)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-amber-400 font-mono font-bold focus:outline-none focus:border-amber-500"
+                        placeholder="30"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">ټاګ / باج (Tag Badge)</label>
+                      <input 
+                        value={plan.tag || ''}
+                        onChange={(e) => handleUpdatePlan(index, 'tag', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                        placeholder="مثلا: مشهور 🔥"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">توضیحات (Description)</label>
+                      <input 
+                        value={plan.description || ''}
+                        onChange={(e) => handleUpdatePlan(index, 'description', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-amber-500"
+                        placeholder="د پلان لنډ تشریح..."
+                      />
+                    </div>
                   </div>
                 </div>
               ))}

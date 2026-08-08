@@ -46,7 +46,7 @@ import {
   createUserWithEmailAndPassword, 
   signOut 
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 interface PremiumModalProps {
   isOpen: boolean;
@@ -63,8 +63,8 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
   currentUser,
   setCurrentUser
 }) => {
-  // Modal Navigation State: 'plans' | 'order' | 'profile' | 'auth'
-  const [viewMode, setViewMode] = useState<'plans' | 'order' | 'profile' | 'auth'>(() => {
+  // Modal Navigation State: 'plans' | 'order' | 'profile' | 'auth' | 'review'
+  const [viewMode, setViewMode] = useState<'plans' | 'order' | 'profile' | 'auth' | 'review'>(() => {
     return currentUser ? 'profile' : 'plans';
   });
 
@@ -94,6 +94,209 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [orderSubmitted, setOrderSubmitted] = useState(false);
+  const [userTicket, setUserTicket] = useState<any>(null);
+
+  // Check VIP Ticket Review status
+  const checkUserTicketStatus = async () => {
+    const targetEmail = (currentUser?.email || orderEmail || '').toLowerCase();
+    if (!targetEmail) return;
+
+    // 1. Check local storage tickets
+    const tickets = JSON.parse(localStorage.getItem('zama_vip_tickets') || '[]');
+    const myTicket = tickets.find((t: any) => 
+      (t.userEmail && t.userEmail.toLowerCase() === targetEmail) || 
+      (currentUser?.id && t.userId === currentUser.id)
+    );
+
+    if (myTicket) {
+      setUserTicket(myTicket);
+    }
+
+    // 2. Check current user in zama_users
+    const users = JSON.parse(localStorage.getItem('zama_users') || '[]');
+    const freshUser = users.find((u: any) => 
+      (u.email && u.email.toLowerCase() === targetEmail) || 
+      (currentUser?.id && u.id === currentUser.id)
+    );
+
+    if (freshUser) {
+      if (freshUser.isVip && !currentUser?.isVip) {
+        setCurrentUser(freshUser);
+        localStorage.setItem('zama_current_user', JSON.stringify(freshUser));
+      }
+    }
+
+    // 3. Sync from Firestore
+    try {
+      if (db) {
+        const q = query(collection(db, 'vip_tickets'), where('userEmail', '==', targetEmail));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          const docData = querySnapshot.docs[0].data();
+          if (docData) {
+            setUserTicket(docData);
+            if (docData.status === 'approved' && freshUser) {
+              const updatedUser = { 
+                ...freshUser, 
+                isVip: true, 
+                hasPendingVip: false,
+                vipExpiresAt: freshUser.vipExpiresAt || docData.vipExpiresAt 
+              };
+              setCurrentUser(updatedUser);
+              localStorage.setItem('zama_current_user', JSON.stringify(updatedUser));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // silent catch
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      checkUserTicketStatus();
+      if (currentUser?.hasPendingVip && !userTicket) {
+        setViewMode('review');
+      }
+    }
+  }, [isOpen, currentUser]);
+
+  // Interval check when in review view
+  useEffect(() => {
+    let interval: any;
+    if (isOpen && (viewMode === 'review' || currentUser?.hasPendingVip)) {
+      interval = setInterval(() => {
+        checkUserTicketStatus();
+      }, 4000);
+    }
+    return () => clearInterval(interval);
+  }, [isOpen, viewMode, currentUser]);
+
+  // Profile Edit & Facebook Card States
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editName, setEditName] = useState(currentUser?.name || '');
+  const [editPhone, setEditPhone] = useState(currentUser?.phone || '');
+  const [editBio, setEditBio] = useState(currentUser?.bio || 'د زما ټلویزیون VIP غړی 🎬');
+  const [editAvatar, setEditAvatar] = useState(currentUser?.avatar || '');
+  const [editCover, setEditCover] = useState(currentUser?.cover || '');
+  const [editPassword, setEditPassword] = useState(currentUser?.password || '');
+  const [profileNotice, setProfileNotice] = useState('');
+
+  // Sync profile edit state whenever currentUser changes
+  useEffect(() => {
+    if (currentUser) {
+      setEditName(currentUser.name || '');
+      setEditPhone(currentUser.phone || '');
+      setEditBio(currentUser.bio || 'د زما ټلویزیون VIP غړی 🎬');
+      setEditAvatar(currentUser.avatar || '');
+      setEditCover(currentUser.cover || '');
+      setEditPassword(currentUser.password || '');
+    }
+  }, [currentUser]);
+
+  // Update profile helper
+  const updateUserProfilePartial = async (fieldsToUpdate: any) => {
+    if (!currentUser) return;
+
+    const updatedUser = {
+      ...currentUser,
+      ...fieldsToUpdate
+    };
+
+    setCurrentUser(updatedUser);
+    localStorage.setItem('zama_current_user', JSON.stringify(updatedUser));
+
+    // Update in users array
+    const users = JSON.parse(localStorage.getItem('zama_users') || '[]');
+    const updatedUsers = users.map((u: any) => {
+      if (u.id === updatedUser.id || u.email === updatedUser.email) {
+        return { ...u, ...updatedUser };
+      }
+      return u;
+    });
+    localStorage.setItem('zama_users', JSON.stringify(updatedUsers));
+
+    try {
+      if (updatedUser.id) {
+        await setDoc(doc(db, 'users', updatedUser.id), updatedUser, { merge: true });
+      }
+    } catch (e) {
+      console.warn("Firestore update error:", e);
+    }
+
+    setProfileNotice(language === 'en' ? 'Profile updated successfully!' : 'ستاسو فیسبوک بڼه پروفایل په بریا بدلون وموند!');
+    setTimeout(() => setProfileNotice(''), 3000);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await updateUserProfilePartial({
+      name: editName.trim(),
+      phone: editPhone.trim(),
+      bio: editBio.trim(),
+      avatar: editAvatar || null,
+      cover: editCover || null,
+      ...(editPassword.trim() ? { password: editPassword.trim() } : {})
+    });
+    setIsEditingProfile(false);
+  };
+
+  // Plans Array (dynamically loaded from localStorage or default configuration)
+  const [plans, setPlans] = useState(() => {
+    const custom = localStorage.getItem('zama_plans_config');
+    if (custom) {
+      try {
+        const parsed = JSON.parse(custom);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (err) {
+        console.warn('Failed to parse zama_plans_config:', err);
+      }
+    }
+    return [
+      {
+        id: '1-month',
+        name: language === 'en' ? '1 Month Plan' : (language === 'dr' ? 'پلان ۱ ماهه' : '۱ میاشت VIP'),
+        price: '150 AFN',
+        days: 30,
+        description: language === 'en' ? '30 Days Full Access' : '۳۰ ورځې بې له اعلاناتو د ۴کا سټریم درلودل',
+        tag: language === 'en' ? 'Standard' : 'عادي'
+      },
+      {
+        id: '3-months',
+        name: language === 'en' ? '3 Months Plan' : (language === 'dr' ? 'پلان ۳ ماهه' : '۳ میاشتې VIP'),
+        price: '350 AFN',
+        days: 90,
+        description: language === 'en' ? '90 Days High Speed Access' : '۹۰ ورځې بې خنډه سټریم او د ټولو نویو فلمونو ننداره',
+        tag: language === 'en' ? 'Popular' : 'مشهور 🔥'
+      },
+      {
+        id: '1-year',
+        name: language === 'en' ? '1 Year Plan' : (language === 'dr' ? 'پلان ۱ ساله' : '۱ کال VIP'),
+        price: '999 AFN',
+        days: 365,
+        description: language === 'en' ? '365 Days Premium VIP' : '۳۶۵ ورځې د سرو زرو اکونټ له ۵۰٪ تخفیف سره',
+        tag: language === 'en' ? 'Best Value' : 'غوره بیه 👑'
+      }
+    ];
+  });
+
+  // Re-sync plans whenever modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const custom = localStorage.getItem('zama_plans_config');
+      if (custom) {
+        try {
+          const parsed = JSON.parse(custom);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setPlans(parsed);
+          }
+        } catch (e) {
+          // fallback
+        }
+      }
+    }
+  }, [isOpen]);
 
   // Static Afghan Payment Account references
   const paymentNumbers = {
@@ -349,6 +552,13 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
       existingTickets.unshift(newTicket);
       localStorage.setItem('zama_vip_tickets', JSON.stringify(existingTickets));
 
+      // Save to Firestore
+      try {
+        await setDoc(doc(db, 'vip_tickets', ticketId), newTicket);
+      } catch (e) {
+        console.warn("Firestore ticket save error:", e);
+      }
+
       // 2. Register/Update User account locally & set pending VIP state
       const newUserObj = {
         id: currentUser?.id || `user-${Date.now()}`,
@@ -377,42 +587,23 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
       }
       localStorage.setItem('zama_users', JSON.stringify(usersList));
 
+      // Save user to Firestore
+      try {
+        await setDoc(doc(db, 'users', newUserObj.id), newUserObj, { merge: true });
+      } catch (e) {
+        console.warn("Firestore user save error:", e);
+      }
+
+      setUserTicket(newTicket);
       setIsSubmitting(false);
       setOrderSubmitted(true);
+      setViewMode('review');
     } catch (err: any) {
       console.error("Order submission error:", err);
       setFormError(language === 'en' ? 'Failed to submit request. Try again.' : 'د غوښتنې په لیږلو کې ستونزه راغله. بیا هڅه وکړئ.');
       setIsSubmitting(false);
     }
   };
-
-  // Default Plans Array
-  const plans = [
-    {
-      id: '1-month',
-      name: language === 'en' ? '1 Month Plan' : (language === 'dr' ? 'پلان ۱ ماهه' : '۱ میاشت VIP'),
-      price: '150 AFN',
-      days: 30,
-      description: language === 'en' ? '30 Days Full Access' : '۳۰ ورځې بې له اعلاناتو د ۴کا سټریم درلودل',
-      tag: language === 'en' ? 'Standard' : 'عادي'
-    },
-    {
-      id: '3-months',
-      name: language === 'en' ? '3 Months Plan' : (language === 'dr' ? 'پلان ۳ ماهه' : '۳ میاشتې VIP'),
-      price: '350 AFN',
-      days: 90,
-      description: language === 'en' ? '90 Days High Speed Access' : '۹۰ ورځې بې خنډه سټریم او د ټولو نویو فلمونو ننداره',
-      tag: language === 'en' ? 'Popular' : 'مشهور 🔥'
-    },
-    {
-      id: '1-year',
-      name: language === 'en' ? '1 Year Plan' : (language === 'dr' ? 'پلان ۱ ساله' : '۱ کال VIP'),
-      price: '999 AFN',
-      days: 365,
-      description: language === 'en' ? '365 Days Premium VIP' : '۳۶۵ ورځې د سرو زرو اکونټ له ۵۰٪ تخفیف سره',
-      tag: language === 'en' ? 'Best Value' : 'غوره بیه 👑'
-    }
-  ];
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md">
@@ -467,6 +658,17 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
             >
               {language === 'en' ? 'Plans' : 'پلانونه'}
             </button>
+
+            {(currentUser?.hasPendingVip || userTicket || orderSubmitted) && (
+              <button
+                onClick={() => setViewMode('review')}
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
+                  viewMode === 'review' ? 'bg-amber-500 text-slate-950 font-black' : 'text-amber-400 hover:text-amber-300'
+                }`}
+              >
+                <span>⏳ Review</span>
+              </button>
+            )}
 
             {currentUser ? (
               <button
@@ -820,38 +1022,135 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
           )}
 
           {/* =========================================================================
-             VIEW 3: SUBMITTED CONFIRMATION SCREEN
+             VIEW 3: REVIEW / STATUS SCREEN (د اډمین تر څېړنې لاندې & ستاسې غوښتنه ومنل شوه)
              ========================================================================= */}
-          {viewMode === 'order' && orderSubmitted && (
-            <div className="p-6 text-center space-y-4 animate-scale-up">
-              <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto text-3xl shadow-lg">
-                ✓
-              </div>
-              
-              <h4 className="text-lg font-black text-white">
-                {language === 'en' ? 'VIP Request Submitted to Admin!' : 'ستاسو معلومات او د تادیې رسید په بریالیتوب اډمین ته واستول شو!'}
-              </h4>
+          {viewMode === 'review' && (
+            <div className="space-y-4 animate-fade-in">
+              {/* If Approved */}
+              {(userTicket?.status === 'approved' || currentUser?.isVip) ? (
+                <div className="p-6 text-center space-y-4 rounded-2xl bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-950 border-2 border-emerald-500/60 shadow-2xl animate-scale-up">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-400 text-emerald-300 flex items-center justify-center mx-auto text-3xl shadow-lg shadow-emerald-950 animate-bounce">
+                    ✓
+                  </div>
 
-              <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                {language === 'en' 
-                  ? 'Your payment screenshot and details are now under Admin review. Once approved, your VIP subscription will automatically activate!' 
-                  : 'زموږ اډمین به ستاسو لخوا لیږل شوی د پیمینټ سکرین شاټ، ایمیل او د اړیکې شمیره وګوري. تر تایید وروسته به ستاسو اکونټ سمدستي VIP شي.'}
-              </p>
+                  <div className="space-y-1">
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3 py-1 rounded-full text-xs font-black inline-block">
+                      👑 VIP غړیتوب فعال شو
+                    </span>
+                    <h4 className="text-xl font-black text-white pt-2">
+                      ستاسې غوښتنه ومنل شوه! 🎉
+                    </h4>
+                    <p className="text-xs text-emerald-300/90 font-medium max-w-md mx-auto leading-relaxed pt-1">
+                      ستاسو د VIP غوښتنه او تادیه د اډمین لخوا په بریا سره ومنل شوه. اوس تاسو د زما ټلویزیون VIP اکونټ لرئ او بې له اعلاناتو د ۴کا سټریم درلودلی شئ!
+                    </p>
+                  </div>
 
-              <div className="flex gap-2 justify-center pt-2">
-                <button
-                  onClick={() => setViewMode('profile')}
-                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition"
-                >
-                  {language === 'en' ? 'View My Profile' : 'زما پروفایل کتل'}
-                </button>
-                <button
-                  onClick={onClose}
-                  className="px-6 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-md"
-                >
-                  {language === 'en' ? 'Close Window' : 'مننه / بندول'}
-                </button>
-              </div>
+                  {/* Counter Card */}
+                  <div className="p-4 bg-slate-950 rounded-xl border border-emerald-500/30 flex items-center justify-between text-xs max-w-sm mx-auto font-mono">
+                    <span className="text-slate-300 font-bold">ورځې پاتې دي (Remaining):</span>
+                    <span className="text-amber-400 font-black text-sm bg-amber-500/10 px-3 py-1 rounded-lg border border-amber-500/30">
+                      👑 {remainingDays} ورځې
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2 justify-center pt-2">
+                    <button
+                      onClick={() => setViewMode('profile')}
+                      className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white rounded-xl text-xs font-black shadow-lg shadow-emerald-950 transition flex items-center gap-1.5"
+                    >
+                      <User className="w-4 h-4" />
+                      <span>زما پروفایل ته تلل</span>
+                    </button>
+                    <button
+                      onClick={onClose}
+                      className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition"
+                    >
+                      مننه / بندول
+                    </button>
+                  </div>
+                </div>
+              ) : (userTicket?.status === 'declined' || userTicket?.status === 'rejected') ? (
+                /* If Declined */
+                <div className="p-6 text-center space-y-4 rounded-2xl bg-slate-950 border-2 border-rose-500/50 shadow-xl">
+                  <div className="w-14 h-14 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center mx-auto text-2xl font-black">
+                    ✕
+                  </div>
+                  <h4 className="text-base font-black text-white">
+                    بښنه غواړو، ستاسو غوښتنه رد شوه
+                  </h4>
+                  <p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed bg-slate-900 p-3.5 rounded-xl border border-slate-800">
+                    ستاسو د پیمینټ رسید یا پورته شوي معلومات د اډمین لخوا ونه منل شول. مهرباني وکړئ نوی عکس او سم معلومات داخل کړئ.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setOrderSubmitted(false);
+                      setViewMode('plans');
+                    }}
+                    className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black transition shadow-md"
+                  >
+                    نوی پلان غوره کړه او رسید واستوه 🚀
+                  </button>
+                </div>
+              ) : (
+                /* Under Review (Pending / Reviewing) */
+                <div className="p-5 text-center space-y-4 rounded-2xl bg-gradient-to-br from-amber-950/40 via-slate-950 to-slate-950 border-2 border-amber-500/50 shadow-2xl relative overflow-hidden">
+                  <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border-2 border-amber-500/40 text-amber-400 flex items-center justify-center mx-auto text-3xl shadow-lg shadow-amber-950/40 animate-pulse">
+                    ⏳
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-3 py-1 rounded-full text-[11px] font-black inline-block uppercase tracking-wider">
+                      Review - د اډمین تر څېړنې لاندې
+                    </span>
+                    <h4 className="text-lg font-black text-white pt-1">
+                      ستاسو معلومات د اډمین لخوا تر بررسی / Review لاندې دي ⏳
+                    </h4>
+                    <p className="text-xs text-amber-200/80 font-medium max-w-sm mx-auto leading-relaxed pt-1">
+                      ستاسو لخوا لیږل شوی د تادیې رسید او معلومات زموږ اډمین ته رسیدلي دي. مهرباني وکړئ یو څه شیبه انتظار وکړئ.
+                    </p>
+                  </div>
+
+                  {/* Ticket Summary Card */}
+                  {userTicket && (
+                    <div className="p-3.5 bg-slate-900/90 rounded-xl border border-amber-500/30 text-right space-y-2 text-xs text-slate-300 max-w-sm mx-auto font-sans">
+                      <div className="flex justify-between border-b border-slate-800 pb-1.5">
+                        <span className="text-slate-400 font-bold">غوره شوی پلان:</span>
+                        <span className="text-amber-300 font-black">{userTicket.planName || selectedPlan?.name} ({userTicket.planPrice || selectedPlan?.price})</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-800 pb-1.5">
+                        <span className="text-slate-400 font-bold">کاروونکی / ایمیل:</span>
+                        <span className="text-white font-mono text-[11px]">{userTicket.userEmail || orderEmail}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold">حالت (Status):</span>
+                        <span className="text-amber-400 font-bold flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                          <span>د څېړنې په حال کې (Reviewing)...</span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-[11px] text-slate-400 leading-relaxed max-w-sm mx-auto">
+                    💡 کله چې اډمین ستاسو غوښتنه تایید کړي، همدا ځای کې به وښودل شي: <span className="text-emerald-400 font-bold font-sans">"ستاسې غوښتنه ومنل شوه!"</span>
+                  </div>
+
+                  <div className="flex gap-2 justify-center pt-1">
+                    <button
+                      onClick={checkUserTicketStatus}
+                      className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition shadow-md flex items-center gap-1.5"
+                    >
+                      <span>🔄 حالت بېرته چک کړه (Refresh Status)</span>
+                    </button>
+                    <button
+                      onClick={onClose}
+                      className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition"
+                    >
+                      بندول
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -933,37 +1232,240 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
           )}
 
           {/* =========================================================================
-             VIEW 5: DETAILED USER PROFILE TAB (DAYS REMAINING COUNTER WIDGET)
+             VIEW 5: FACEBOOK STYLE USER PROFILE & EDITING TAB
              ========================================================================= */}
           {viewMode === 'profile' && currentUser && (
-            <div className="space-y-4 animate-fade-in">
+            <div className="space-y-5 animate-fade-in">
               
-              {/* Profile Card */}
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 border border-slate-800 flex items-center gap-3.5 relative overflow-hidden">
-                <div className="w-16 h-16 rounded-2xl bg-slate-800 border-2 border-rose-500/40 overflow-hidden shrink-0 flex items-center justify-center shadow-lg">
-                  {currentUser.avatar ? (
-                    <img src={currentUser.avatar} alt="User Avatar" className="w-full h-full object-cover" />
+              {profileNotice && (
+                <div className="p-3 bg-emerald-600/20 border border-emerald-500/40 rounded-xl text-emerald-300 text-xs font-bold text-center animate-fade-in flex items-center justify-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-400" />
+                  <span>{profileNotice}</span>
+                </div>
+              )}
+
+              {/* 🟦 FACEBOOK STYLE PROFILE HEADER CARD */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden shadow-2xl relative">
+                {/* Cover Photo Container */}
+                <div className="relative h-36 sm:h-44 w-full bg-gradient-to-r from-rose-950 via-slate-900 to-amber-950 overflow-hidden group">
+                  {currentUser.cover ? (
+                    <img src={currentUser.cover} alt="Profile Cover" className="w-full h-full object-cover" />
                   ) : (
-                    <User className="w-8 h-8 text-rose-400" />
+                    <div className="w-full h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-900/40 via-slate-950 to-slate-950 flex items-center justify-center">
+                      <span className="text-slate-700 font-mono text-xs uppercase tracking-widest font-black">Zama TV VIP Profile</span>
+                    </div>
                   )}
+
+                  {/* Quick Change Cover Button */}
+                  <label className="absolute top-3 right-3 cursor-pointer bg-slate-950/80 hover:bg-slate-900 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-xl border border-slate-700/80 backdrop-blur-md flex items-center gap-1.5 shadow-lg transition">
+                    <Camera className="w-3.5 h-3.5 text-amber-400" />
+                    <span>د کاور عکس بدلول 📷</span>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      className="hidden" 
+                      onChange={(e) => handleFileUpload(e, (base64) => updateUserProfilePartial({ cover: base64 }))} 
+                    />
+                  </label>
                 </div>
 
-                <div className="flex-1 min-w-0 space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-base font-extrabold text-white truncate">{currentUser.name || 'User'}</h4>
-                    {currentUser.isVip && (
-                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 shadow">
-                        <Crown className="w-3 h-3 text-amber-400" />
-                        <span>VIP Member</span>
-                      </span>
-                    )}
+                {/* Avatar & Header Details Row */}
+                <div className="px-4 sm:px-6 pb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 -mt-12 sm:-mt-14 mb-3 relative z-10">
+                    
+                    {/* Circular Avatar */}
+                    <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-full border-4 border-slate-950 bg-slate-900 shadow-2xl overflow-hidden shrink-0 group mx-auto sm:mx-0">
+                      {currentUser.avatar ? (
+                        <img src={currentUser.avatar} alt="User Avatar" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-rose-950/50 text-rose-400 font-black text-2xl">
+                          {currentUser.name?.charAt(0) || '👤'}
+                        </div>
+                      )}
+
+                      {/* Camera Upload Overlay */}
+                      <label className="absolute inset-0 bg-slate-950/70 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center cursor-pointer text-white text-[9px] font-bold">
+                        <Camera className="w-6 h-6 text-amber-300 mb-0.5" />
+                        <span>عکس بدلول</span>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => handleFileUpload(e, (base64) => updateUserProfilePartial({ avatar: base64 }))} 
+                        />
+                      </label>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-center sm:justify-end gap-2 w-full sm:w-auto">
+                      <button
+                        onClick={() => setIsEditingProfile(!isEditingProfile)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition border flex items-center gap-1.5 shadow ${
+                          isEditingProfile 
+                            ? 'bg-amber-500 text-slate-950 border-amber-400' 
+                            : 'bg-slate-900 hover:bg-slate-800 text-white border-slate-700'
+                        }`}
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-amber-400" />
+                        <span>{isEditingProfile ? 'د ایډیټ بندول ✕' : '✏️ پروفایل ایډیټ کړه'}</span>
+                      </button>
+
+                      <button
+                        onClick={handleLogout}
+                        className="px-3.5 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/80 text-xs font-bold transition flex items-center gap-1.5 shadow"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>وتل (Logout)</span>
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-400 font-mono truncate">📧 {currentUser.email}</p>
-                  {currentUser.phone && (
-                    <p className="text-xs text-slate-400 font-mono truncate">📱 {currentUser.phone}</p>
-                  )}
+
+                  {/* Profile Text Info */}
+                  <div className="space-y-1 text-center sm:text-right ltr:sm:text-left">
+                    <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                      <h4 className="text-lg font-black text-white">{currentUser.name || 'User'}</h4>
+                      {currentUser.isVip ? (
+                        <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-0.5 rounded-full text-[11px] font-black flex items-center gap-1 shadow">
+                          <Crown className="w-3.5 h-3.5 text-amber-400" />
+                          <span>👑 VIP غړی</span>
+                        </span>
+                      ) : (
+                        <span className="bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                          👤 وړیا اکونټ
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-amber-300/90 font-medium italic">
+                      "{currentUser.bio || 'د زما ټلویزیون (Zama TV) VIP غړی 🎬'}"
+                    </p>
+
+                    <div className="flex items-center justify-center sm:justify-start gap-4 text-xs text-slate-400 font-mono pt-1 flex-wrap">
+                      <span className="flex items-center gap-1">📧 {currentUser.email}</span>
+                      {currentUser.phone && <span className="flex items-center gap-1">📱 {currentUser.phone}</span>}
+                      {currentUser.createdAt && (
+                        <span className="flex items-center gap-1 text-[11px]">📅 غړیتوب نیټه: {new Date(currentUser.createdAt).toLocaleDateString()}</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              {/* ✏️ EDIT PROFILE FORM (ACCORDION) */}
+              {isEditingProfile && (
+                <form onSubmit={handleSaveProfile} className="p-4 sm:p-5 rounded-2xl bg-slate-950 border-2 border-amber-500/40 space-y-4 shadow-xl animate-fade-in">
+                  <h5 className="text-xs font-black text-amber-400 flex items-center gap-2 border-b border-slate-800 pb-2">
+                    <Edit3 className="w-4 h-4" />
+                    <span>د پروفایل معلومات او عکسونه ایډیټ کړه (Edit Profile)</span>
+                  </h5>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="text-xs font-bold text-slate-300 mb-1 block">بشپړ نوم (Full Name)</label>
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                        placeholder="احمد احمدی"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-300 mb-1 block">موبایل شمیره (Phone Number)</label>
+                      <input
+                        type="tel"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+                        placeholder="0799123456"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-bold text-slate-300 mb-1 block">بیو / دلخوا لایحه (Bio / Status)</label>
+                      <input
+                        type="text"
+                        value={editBio}
+                        onChange={(e) => setEditBio(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                        placeholder="مثلا: مینه وال د پښتو فلمونو..."
+                      />
+                    </div>
+
+                    {/* Avatar Upload */}
+                    <div>
+                      <label className="text-xs font-bold text-slate-300 mb-1 block">د پروفایل عکس (Profile Avatar)</label>
+                      <div className="flex items-center gap-2">
+                        <label className="flex-1 py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-xl text-xs text-slate-300 cursor-pointer flex items-center justify-center gap-1.5 transition">
+                          <Upload className="w-3.5 h-3.5 text-amber-400" />
+                          <span>عکس اپلوډ کړه</span>
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            className="hidden" 
+                            onChange={(e) => handleFileUpload(e, (base64) => setEditAvatar(base64))} 
+                          />
+                        </label>
+                        {editAvatar && (
+                          <div className="w-9 h-9 rounded-full overflow-hidden border border-amber-500 shrink-0">
+                            <img src={editAvatar} alt="Avatar Preview" className="w-full h-full object-cover" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Cover Upload */}
+                    <div>
+                      <label className="text-xs font-bold text-slate-300 mb-1 block">د کاور عکس (Cover Image)</label>
+                      <div className="flex items-center gap-2">
+                        <label className="flex-1 py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-xl text-xs text-slate-300 cursor-pointer flex items-center justify-center gap-1.5 transition">
+                          <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                          <span>کاور اپلوډ کړه</span>
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            className="hidden" 
+                            onChange={(e) => handleFileUpload(e, (base64) => setEditCover(base64))} 
+                          />
+                        </label>
+                        {editCover && (
+                          <div className="w-12 h-8 rounded overflow-hidden border border-amber-500 shrink-0">
+                            <img src={editCover} alt="Cover Preview" className="w-full h-full object-cover" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-xs font-bold text-slate-300 mb-1 block">نوی پټ نوم / پاسورډ (New Password)</label>
+                      <input
+                        type="password"
+                        value={editPassword}
+                        onChange={(e) => setEditPassword(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+                        placeholder="کیدی شي بدل یې نه کړئ (خالي پرېږدئ)"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+                    <button
+                      type="submit"
+                      className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-md transition"
+                    >
+                      💾 تغیرات خوندي کړه (Save Changes)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingProfile(false)}
+                      className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition"
+                    >
+                      لغوه
+                    </button>
+                  </div>
+                </form>
+              )}
 
               {/* 👑 VIP DAYS REMAINING COUNTER WIDGET */}
               {currentUser.isVip ? (
@@ -1070,15 +1572,6 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
               >
                 <Crown className="w-4 h-4" />
                 <span>{currentUser.isVip ? 'د VIP غړیتوب وخت غځول / نوی کول 👑' : 'د VIP اکونټ اخیستل 👑'}</span>
-              </button>
-
-              {/* Logout Button */}
-              <button
-                onClick={handleLogout}
-                className="w-full py-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-rose-400 border border-slate-800 text-xs font-bold transition flex items-center justify-center gap-1.5"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>{language === 'en' ? 'Logout / Switch Account' : 'له اکونټ وتل / د بل اکونټ بدلول'}</span>
               </button>
 
             </div>
