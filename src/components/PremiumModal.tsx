@@ -63,9 +63,20 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
   currentUser,
   setCurrentUser
 }) => {
-  // Modal Navigation State
-  const [viewMode, setViewMode] = useState<'plans' | 'order' | 'profile'>('plans');
-  
+  // Modal Navigation State: 'plans' | 'order' | 'profile' | 'auth'
+  const [viewMode, setViewMode] = useState<'plans' | 'order' | 'profile' | 'auth'>(() => {
+    return currentUser ? 'profile' : 'plans';
+  });
+
+  // Auth sub-mode: 'login' | 'register'
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authPhone, setAuthPhone] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authSuccess, setAuthSuccess] = useState('');
+
   // Selected VIP Plan
   const [selectedPlan, setSelectedPlan] = useState<{ name: string; price: string; days: number; tag?: string } | null>(null);
 
@@ -93,7 +104,7 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
     coupon: 'د کوپن کوډ داخل کړئ'
   };
 
-  // Pre-fill user data when modal opens
+  // Pre-fill user data when modal opens or user changes
   useEffect(() => {
     if (currentUser) {
       setOrderEmail(currentUser.email || '');
@@ -105,6 +116,18 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
   }, [currentUser, isOpen]);
 
   if (!isOpen) return null;
+
+  // Calculate Days Remaining
+  const getVipRemainingDays = () => {
+    if (!currentUser?.isVip || !currentUser?.vipExpiresAt) return 0;
+    const now = new Date().getTime();
+    const expiry = new Date(currentUser.vipExpiresAt).getTime();
+    const diffMs = expiry - now;
+    if (diffMs <= 0) return 0;
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  };
+
+  const remainingDays = getVipRemainingDays();
 
   // Helper for uploading files and converting to base64
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, callback: (base64: string) => void) => {
@@ -136,6 +159,143 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
     setFormError('');
     setOrderSubmitted(false);
     setViewMode('order');
+  };
+
+  // Handle User Login
+  const handleUserLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+
+    if (!authEmail.trim() || !authPassword.trim()) {
+      setAuthError(language === 'en' ? 'Please enter Email and Password' : 'مهرباني وکړئ ایمیل او پټ نوم داخل کړئ');
+      return;
+    }
+
+    try {
+      // 1. Try Firebase auth first
+      const credential = await signInWithEmailAndPassword(auth, authEmail.trim(), authPassword.trim());
+      const userRef = doc(db, 'users', credential.user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        const uData = userSnap.data();
+        setCurrentUser(uData);
+        localStorage.setItem('zama_current_user', JSON.stringify(uData));
+      } else {
+        // Fallback local lookup
+        const users = JSON.parse(localStorage.getItem('zama_users') || '[]');
+        const matched = users.find((u: any) => u.email?.toLowerCase() === authEmail.trim().toLowerCase() || u.id === credential.user.uid);
+        const loggedUser = matched || {
+          id: credential.user.uid,
+          name: credential.user.displayName || authEmail.split('@')[0],
+          email: authEmail.trim(),
+          isVip: false
+        };
+        setCurrentUser(loggedUser);
+        localStorage.setItem('zama_current_user', JSON.stringify(loggedUser));
+      }
+
+      setAuthSuccess(language === 'en' ? 'Logged in successfully!' : 'په بریا سره لاګین شوئ!');
+      setTimeout(() => {
+        setViewMode('profile');
+        setAuthSuccess('');
+      }, 1000);
+    } catch (err: any) {
+      console.warn("Firebase Auth Login Error, checking local DB:", err);
+      // Fallback local storage login
+      const users = JSON.parse(localStorage.getItem('zama_users') || '[]');
+      const matched = users.find((u: any) => 
+        (u.email?.toLowerCase() === authEmail.trim().toLowerCase() || u.phone === authEmail.trim()) &&
+        u.password === authPassword.trim()
+      );
+
+      if (matched) {
+        setCurrentUser(matched);
+        localStorage.setItem('zama_current_user', JSON.stringify(matched));
+        setAuthSuccess(language === 'en' ? 'Logged in successfully!' : 'په بریا سره لاګین شوئ!');
+        setTimeout(() => {
+          setViewMode('profile');
+          setAuthSuccess('');
+        }, 1000);
+      } else {
+        setAuthError(language === 'en' ? 'Invalid email, phone or password!' : 'داخل شوی ایمیل، شمیره یا پاسورډ غلط دی!');
+      }
+    }
+  };
+
+  // Handle User Registration
+  const handleUserRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+
+    if (!authEmail.trim() || !authPassword.trim() || !authName.trim()) {
+      setAuthError(language === 'en' ? 'Please fill in all required fields' : 'مهرباني وکړئ نوم، ایمیل او پاسورډ حتمي ولیکئ');
+      return;
+    }
+
+    try {
+      // 1. Try Firebase auth creation
+      const userCred = await createUserWithEmailAndPassword(auth, authEmail.trim(), authPassword.trim());
+      const uid = userCred.user.uid;
+      const newUserObj = {
+        id: uid,
+        name: authName.trim(),
+        email: authEmail.trim().toLowerCase(),
+        password: authPassword.trim(),
+        phone: authPhone.trim(),
+        isVip: false,
+        createdAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, 'users', uid), newUserObj);
+
+      const users = JSON.parse(localStorage.getItem('zama_users') || '[]');
+      users.push(newUserObj);
+      localStorage.setItem('zama_users', JSON.stringify(users));
+
+      setCurrentUser(newUserObj);
+      localStorage.setItem('zama_current_user', JSON.stringify(newUserObj));
+
+      setAuthSuccess(language === 'en' ? 'Account created successfully!' : 'نوی اکونټ په بریا جوړ شو!');
+      setTimeout(() => {
+        setViewMode('profile');
+        setAuthSuccess('');
+      }, 1000);
+    } catch (err: any) {
+      console.warn("Firebase Auth Signup Error, falling back to local creation:", err);
+      const newUserObj = {
+        id: `user-${Date.now()}`,
+        name: authName.trim(),
+        email: authEmail.trim().toLowerCase(),
+        password: authPassword.trim(),
+        phone: authPhone.trim(),
+        isVip: false,
+        createdAt: new Date().toISOString()
+      };
+
+      const users = JSON.parse(localStorage.getItem('zama_users') || '[]');
+      users.push(newUserObj);
+      localStorage.setItem('zama_users', JSON.stringify(users));
+
+      setCurrentUser(newUserObj);
+      localStorage.setItem('zama_current_user', JSON.stringify(newUserObj));
+
+      setAuthSuccess(language === 'en' ? 'Account created locally!' : 'حساب سمدستي جوړ شو!');
+      setTimeout(() => {
+        setViewMode('profile');
+        setAuthSuccess('');
+      }, 1000);
+    }
+  };
+
+  // Handle Logout
+  const handleLogout = () => {
+    signOut(auth).catch(() => {});
+    setCurrentUser(null);
+    localStorage.removeItem('zama_current_user');
+    setViewMode('plans');
   };
 
   // Handle Order Submit to Admin
@@ -197,8 +357,9 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
         password: newTicket.userPassword,
         phone: newTicket.userPhone,
         avatar: newTicket.userAvatar,
-        isVip: false,
+        isVip: currentUser?.isVip || false,
         hasPendingVip: true,
+        vipExpiresAt: currentUser?.vipExpiresAt || null,
         createdAt: currentUser?.createdAt || timestamp
       };
 
@@ -265,7 +426,7 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white flex items-center gap-1.5">
-                <span>{language === 'en' ? 'Zama TV VIP Subscription' : 'د زما ټلویزیون VIP اکونټ او پلانونه'}</span>
+                <span>{language === 'en' ? 'Zama TV VIP Subscription' : 'د زما ټلویزیون VIP اکونټ او پروفایل'}</span>
               </h3>
               <p className="text-[11px] text-slate-400">zamatv.site Premium Network</p>
             </div>
@@ -282,12 +443,13 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
         {/* Top User Greeting / Navigation Bar */}
         <div className="flex items-center justify-between px-5 py-2.5 bg-slate-950/60 border-b border-slate-800/80 text-xs">
           <div className="flex items-center gap-2">
-            <span className="text-slate-400">
+            <span className="text-slate-300 font-medium">
               {currentUser ? `👋 ${currentUser.name || currentUser.email}` : (language === 'en' ? 'Welcome Guest!' : 'ښه راغلاست!')}
             </span>
             {currentUser?.isVip ? (
-              <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-black">
-                👑 VIP فعال
+              <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1">
+                <Crown className="w-3 h-3 text-amber-400" />
+                <span>👑 {remainingDays} ورځې پاتې</span>
               </span>
             ) : currentUser?.hasPendingVip ? (
               <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full text-[10px] font-bold animate-pulse">
@@ -296,15 +458,37 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
             ) : null}
           </div>
 
-          {currentUser && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setViewMode(viewMode === 'profile' ? 'plans' : 'profile')}
-              className="text-[11px] font-bold text-rose-400 hover:text-rose-300 flex items-center gap-1 transition"
+              onClick={() => setViewMode('plans')}
+              className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition ${
+                viewMode === 'plans' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
             >
-              <User className="w-3.5 h-3.5" />
-              <span>{viewMode === 'profile' ? (language === 'en' ? 'VIP Plans' : 'پلانونه') : (language === 'en' ? 'My Profile' : 'زما اکونټ')}</span>
+              {language === 'en' ? 'Plans' : 'پلانونه'}
             </button>
-          )}
+
+            {currentUser ? (
+              <button
+                onClick={() => setViewMode('profile')}
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
+                  viewMode === 'profile' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>{language === 'en' ? 'My Profile' : 'زما پروفایل'}</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setViewMode('auth')}
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition ${
+                  viewMode === 'auth' ? 'bg-rose-600 text-white' : 'text-amber-400 hover:text-amber-300'
+                }`}
+              >
+                🔑 {language === 'en' ? 'Login' : 'لاګین کیدل'}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Modal Main Content Area */}
@@ -672,60 +856,231 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
           )}
 
           {/* =========================================================================
-             VIEW 4: USER PROFILE TAB
+             VIEW 4: USER LOGIN FORM (FOR VIP ACCOUNTS)
+             ========================================================================= */}
+          {viewMode === 'auth' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-center space-y-1">
+                <div className="w-10 h-10 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center mx-auto text-base">
+                  🔑
+                </div>
+                <h4 className="text-sm font-extrabold text-white">
+                  {language === 'en' ? 'VIP Account Login' : 'خپل VIP اکونټ ته لاګین شئ'}
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  {language === 'en' ? 'Enter your registered Email or Phone and Password' : 'کله چې تاسو پلان غوره کوئ هلته ثبت نام کېږئ. دلته خپل لاګین معلومات داخل کړئ.'}
+                </p>
+              </div>
+
+              {authError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{authError}</span>
+                </div>
+              )}
+
+              {authSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span>{authSuccess}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleUserLogin} className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-300 mb-1 block">ایمیل یا ټلیفون شمیره (Email / Phone)</label>
+                  <input
+                    type="text"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="user@gmail.com یا 0799..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-rose-500 font-mono"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-300 mb-1 block">پټ نوم (Password)</label>
+                  <input
+                    type="password"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-rose-500 font-mono"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-gradient-to-r from-rose-600 via-amber-600 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white rounded-xl font-extrabold text-xs shadow-md transition flex items-center justify-center gap-2"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <span>🚀 خپل اکونټ ته ننوتل (Login)</span>
+                </button>
+              </form>
+
+              <div className="pt-2 text-center border-t border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('plans')}
+                  className="text-xs text-amber-400 hover:text-amber-300 font-bold transition"
+                >
+                  ثبت نام نلرئ؟ د VIP پلان اخیستلو لپاره دلته کلیک وکړئ ✨
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================================
+             VIEW 5: DETAILED USER PROFILE TAB (DAYS REMAINING COUNTER WIDGET)
              ========================================================================= */}
           {viewMode === 'profile' && currentUser && (
             <div className="space-y-4 animate-fade-in">
-              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-center gap-3">
-                <div className="w-14 h-14 rounded-full bg-slate-800 border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center">
+              
+              {/* Profile Card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 border border-slate-800 flex items-center gap-3.5 relative overflow-hidden">
+                <div className="w-16 h-16 rounded-2xl bg-slate-800 border-2 border-rose-500/40 overflow-hidden shrink-0 flex items-center justify-center shadow-lg">
                   {currentUser.avatar ? (
                     <img src={currentUser.avatar} alt="User Avatar" className="w-full h-full object-cover" />
                   ) : (
-                    <User className="w-7 h-7 text-rose-400" />
+                    <User className="w-8 h-8 text-rose-400" />
                   )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-bold text-white truncate">{currentUser.name || 'User'}</h4>
-                  <p className="text-xs text-slate-400 font-mono truncate">{currentUser.email}</p>
-                  <div className="mt-1">
-                    {currentUser.isVip ? (
-                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded text-[10px] font-black">
-                        👑 VIP اکونټ فعال
-                      </span>
-                    ) : currentUser.hasPendingVip ? (
-                      <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded text-[10px] font-bold animate-pulse">
-                        ⏳ د اډمین تایید لاندې
-                      </span>
-                    ) : (
-                      <span className="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-[10px] font-bold">
-                        👤 وړیا اکونټ
+
+                <div className="flex-1 min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-base font-extrabold text-white truncate">{currentUser.name || 'User'}</h4>
+                    {currentUser.isVip && (
+                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 shadow">
+                        <Crown className="w-3 h-3 text-amber-400" />
+                        <span>VIP Member</span>
                       </span>
                     )}
                   </div>
+                  <p className="text-xs text-slate-400 font-mono truncate">📧 {currentUser.email}</p>
+                  {currentUser.phone && (
+                    <p className="text-xs text-slate-400 font-mono truncate">📱 {currentUser.phone}</p>
+                  )}
                 </div>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-xs text-slate-300">
-                <div className="flex justify-between py-1 border-b border-slate-900">
-                  <span className="text-slate-400">{language === 'en' ? 'Email:' : 'ایمیل:'}</span>
-                  <span className="font-mono text-white">{currentUser.email}</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-slate-900">
-                  <span className="text-slate-400">{language === 'en' ? 'Phone:' : 'موبایل:'}</span>
-                  <span className="font-mono text-white">{currentUser.phone || '—'}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-slate-400">{language === 'en' ? 'Status:' : 'حالت:'}</span>
-                  <span className="font-bold text-amber-400">{currentUser.isVip ? 'VIP Active' : 'Standard'}</span>
-                </div>
-              </div>
+              {/* 👑 VIP DAYS REMAINING COUNTER WIDGET */}
+              {currentUser.isVip ? (
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-950/30 via-slate-950 to-slate-950 border-2 border-amber-500/40 space-y-4 shadow-xl relative overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-amber-500/20 pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
+                        <Crown className="w-5 h-5 animate-bounce" />
+                      </div>
+                      <div>
+                        <h5 className="text-xs font-black text-amber-300 uppercase tracking-wide">ستاسو د VIP پلان پاتې شوې ورځې</h5>
+                        <p className="text-[11px] text-slate-400">VIP Subscription Validity</p>
+                      </div>
+                    </div>
 
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-1 rounded-xl text-xs font-black">
+                      ✓ فعال اکونټ
+                    </span>
+                  </div>
+
+                  {/* Big Number Remaining Days */}
+                  <div className="flex items-center justify-between bg-slate-900/80 p-4 rounded-xl border border-slate-800">
+                    <div className="space-y-0.5">
+                      <div className="text-3xl font-black text-amber-400 font-mono">
+                        {remainingDays} <span className="text-sm font-sans text-slate-300">ورځې</span>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        {remainingDays > 0 ? `${remainingDays} ورځې پاتې دي` : 'د غړیتوب وخت ختم شوی'}
+                      </p>
+                    </div>
+
+                    <div className="text-right text-xs font-mono space-y-1">
+                      <span className="text-slate-400 block text-[10px]">د پای نیټه (Expiry):</span>
+                      <strong className="text-emerald-400 font-bold block bg-slate-950 px-2 py-1 rounded border border-slate-800">
+                        {currentUser.vipExpiresAt ? new Date(currentUser.vipExpiresAt).toISOString().split('T')[0] : '—'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px] font-bold text-slate-400">
+                      <span>مصرف شوی وخت</span>
+                      <span className="text-amber-400">{remainingDays} / 30 ورځې پاتې</span>
+                    </div>
+                    <div className="w-full bg-slate-900 h-2.5 rounded-full overflow-hidden border border-slate-800">
+                      <div 
+                        className="bg-gradient-to-r from-amber-500 to-rose-500 h-full rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, Math.max(5, (remainingDays / 30) * 100))}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Benefits Unlocked Checklist */}
+                  <div className="pt-2 space-y-2 border-t border-slate-800/80">
+                    <h6 className="text-xs font-extrabold text-white flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>ستاسو اکونټ لاندې ټولو اسانتیاو ته ازاده رسېدنه لري:</span>
+                    </h6>
+                    <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-300">
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>د ټولو نویو افغاني او خارجي فلمونو ننداره</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>۴کا او ۱۰۸۰پي HD خپرونې بې له ځنډه</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>د ټولو اعلاناتو په بشپړ ډول بندول</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>د سپورتي او کرکټ چینلونو ازاد پخش</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              ) : currentUser.hasPendingVip ? (
+                <div className="p-4 rounded-2xl bg-amber-950/20 border-2 border-amber-500/40 text-center space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto text-lg animate-bounce">
+                    ⏳
+                  </div>
+                  <h5 className="text-sm font-extrabold text-amber-300">ستاسو د VIP غوښتنه تر څېړنې لاندې ده</h5>
+                  <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
+                    زموږ اډمین به ژر ستاسو لخوا لیږل شوی د تادیې سکرین شاټ تایید کړي. تر تایید وروسته به ستاسو پروفایل په لاسي یا اتومات ډول VIP شي.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-3">
+                  <span className="text-2xl block">👤</span>
+                  <h5 className="text-xs font-bold text-slate-200">ستاسو اکونټ اوس مهال عادي (وړیا) دی</h5>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    د پریمیوم فلمونو او ۴کا سټریم د لیدلو لپاره، مهرباني وکړئ خپل اکونټ VIP کړئ.
+                  </p>
+                </div>
+              )}
+
+              {/* Extension or Upgrade CTA */}
               <button
                 onClick={() => setViewMode('plans')}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold text-xs shadow-md transition"
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 via-amber-600 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white font-black text-xs shadow-lg transition flex items-center justify-center gap-2"
               >
-                {language === 'en' ? 'Upgrade to VIP Plans' : 'د VIP اکونټ اخیستل / نوي کول 👑'}
+                <Crown className="w-4 h-4" />
+                <span>{currentUser.isVip ? 'د VIP غړیتوب وخت غځول / نوی کول 👑' : 'د VIP اکونټ اخیستل 👑'}</span>
               </button>
+
+              {/* Logout Button */}
+              <button
+                onClick={handleLogout}
+                className="w-full py-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-rose-400 border border-slate-800 text-xs font-bold transition flex items-center justify-center gap-1.5"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>{language === 'en' ? 'Logout / Switch Account' : 'له اکونټ وتل / د بل اکونټ بدلول'}</span>
+              </button>
+
             </div>
           )}
 
@@ -735,3 +1090,4 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
     </div>
   );
 };
+

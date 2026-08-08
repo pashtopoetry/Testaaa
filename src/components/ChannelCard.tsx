@@ -115,7 +115,15 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent"></div>
 
         {/* Top Badges */}
-        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-end z-10">
+        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between z-10">
+          <div>
+            {(channel.isPremium || channel.isMovie || channel.category === 'movies') && (
+              <span className="bg-amber-500/90 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-lg backdrop-blur-md shadow-md flex items-center gap-1 uppercase tracking-wider">
+                👑 VIP
+              </span>
+            )}
+          </div>
+
           <div className="flex items-center gap-2">
             {/* Single live dot badge without heavy text */}
             {channel.isLive && (
@@ -167,23 +175,29 @@ export const ChannelCard: React.FC<ChannelCardProps> = ({
         <div>
           <div className="flex items-start justify-between gap-1 mb-1">
             <h3 className={`font-bold text-sm line-clamp-1 ${isActive ? 'text-rose-400' : 'text-slate-100 group-hover:text-rose-300'}`}>
-              {channelName}
+              <bdi dir="auto">{channelName}</bdi>
             </h3>
           </div>
 
           <p className="text-xs text-slate-400 flex items-center gap-1 line-clamp-1">
             <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
-            <span>{channel.location}</span>
+            <bdi dir="auto">{channel.location}</bdi>
           </p>
         </div>
 
         {/* Card Footer Clean Badge */}
-        <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-mono">
-          <span className="text-slate-400 text-[11px]">
-            {channel.category === 'movies' || channel.isMovie ? '🎬 پښتو فلم' : channel.language}
+        <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-sans gap-1">
+          <span className="text-slate-400 text-[11px] truncate">
+            <bdi dir="auto">
+              {channel.category === 'movies' || channel.isMovie 
+                ? '🎬 پښتو فلم' 
+                : channel.language === 'Pashto / Dari' || channel.language === 'Pashto/Dari'
+                ? 'پښتو / دري'
+                : channel.language}
+            </bdi>
           </span>
 
-          <span className="bg-slate-800 text-slate-300 font-semibold px-2 py-0.5 rounded text-[10px] border border-slate-700">
+          <span className="bg-slate-800 text-slate-300 font-semibold px-2 py-0.5 rounded text-[10px] border border-slate-700 shrink-0 font-mono">
             {channel.quality}
           </span>
         </div>
