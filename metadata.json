@@ -2,5 +2,5 @@
   "name": "Zama TV - د افغانستان تلویزونونه",
   "description": "zamatv.site - د افغانستان ټول ژوندي تلویزوني او راډیویي کانالونه | Afghanistan Live TV & Radio Portal",
   "requestFramePermissions": ["camera", "microphone"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and VIP subscription state",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "phone": { "type": "string" },
+        "isVip": { "type": "boolean" },
+        "hasPendingVip": { "type": "boolean" },
+        "vipStartedAt": { "type": "string" },
+        "vipExpiresAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "VipTicket": {
+      "title": "VIP Ticket",
+      "description": "VIP request ticket submitted by user for admin review",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "status": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userPassword": { "type": "string" },
+        "userName": { "type": "string" },
+        "days": { "type": "number" },
+        "planTitle": { "type": "string" },
+        "screenshot": { "type": "string" },
+        "submittedAt": { "type": "string" }
+      },
+      "required": ["status", "userEmail"]
+    },
+    "Setting": {
+      "title": "System Settings",
+      "description": "Global application configuration settings like payment methods",
+      "type": "object",
+      "properties": {
+        "methods": { "type": "array" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile collection"
+    },
+    "/vip_tickets/{ticketId}": {
+      "schema": "VipTicket",
+      "description": "VIP request tickets"
+    },
+    "/settings/{settingId}": {
+      "schema": "Setting",
+      "description": "Global settings and configurations"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Tv, Radio, Search, Heart, Globe, Sliders, Smartphone, PlusCircle, AlertCircle, ShieldCheck, Film, User, Settings, Moon, Sun, ChevronDown } from 'lucide-react';
+import { Tv, Radio, Search, Heart, Globe, Sliders, Smartphone, PlusCircle, AlertCircle, ShieldCheck, Film, User, Settings, Moon, Sun, ChevronDown, Crown } from 'lucide-react';
 import { Category, Language, Theme } from '../types';
 import { translations } from '../data/translations';
 
@@ -106,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-2 md:hidden">
               <button
                 onClick={onOpenPremium}
-                className={`relative p-2 rounded-xl border transition flex items-center justify-center ${
+                className={`relative px-2.5 py-1.5 rounded-xl border transition flex items-center gap-1.5 ${
                   currentUser?.isVip
                     ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 shadow-lg shadow-amber-900/40'
                     : currentUser
@@ -115,16 +115,24 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}
                 title={currentUser ? currentUser.name : 'Profile / لاګین'}
               >
-                <div className="relative flex items-center justify-center w-6 h-6 rounded-full bg-slate-900 text-xs font-bold">
+                <div className="relative flex items-center justify-center w-6 h-6 rounded-full bg-slate-900 text-xs font-bold shrink-0">
                   {currentUser ? (
                     <span className="text-rose-400 uppercase">{currentUser.name?.[0] || 'U'}</span>
                   ) : (
                     <User className="w-4 h-4 text-slate-300" />
                   )}
-                  {currentUser?.isVip && (
-                    <span className="absolute -top-2 -right-2 text-xs">👑</span>
-                  )}
                 </div>
+                {currentUser && (
+                  <span className="text-xs font-bold truncate max-w-[70px] text-slate-200">
+                    {currentUser.name}
+                  </span>
+                )}
+                {currentUser?.isVip && (
+                  <span className="px-1.5 py-0.5 text-[9px] font-black uppercase rounded-md bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 shadow-sm border border-yellow-200 flex items-center gap-0.5 shrink-0 tracking-wider">
+                    <Crown className="w-2.5 h-2.5 fill-slate-950 text-slate-950" />
+                    <span>VIP</span>
+                  </span>
+                )}
               </button>
               <button
                 onClick={onOpenSettings}
@@ -297,28 +305,36 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Profile / VIP Avatar Icon (Like a Profile Button) */}
             <button
               onClick={onOpenPremium}
-              className={`relative flex items-center gap-2 p-1.5 pr-3 rounded-xl border transition shadow-sm ${
+              className={`relative flex items-center gap-2 p-1.5 px-3 rounded-xl border transition shadow-sm ${
                 currentUser?.isVip
-                  ? 'bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border-amber-500/50 text-amber-300 shadow-amber-900/30'
+                  ? 'bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-amber-500/20 border-amber-500/60 text-amber-300 shadow-amber-900/40 ring-1 ring-amber-500/30'
                   : currentUser
                   ? 'bg-rose-600/20 border-rose-500/40 text-rose-300'
                   : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750'
               }`}
               title={currentUser ? `${currentUser.name} (${currentUser.isVip ? 'VIP' : 'Free'})` : 'د پروفایل/VIP لاګین'}
             >
-              <div className="relative w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center text-xs font-black shadow-inner">
+              <div className="relative w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center text-xs font-black shadow-inner shrink-0">
                 {currentUser ? (
                   <span className="text-rose-400 uppercase">{currentUser.name?.[0] || 'U'}</span>
                 ) : (
                   <User className="w-4 h-4 text-slate-400" />
                 )}
                 {currentUser?.isVip && (
-                  <span className="absolute -top-2 -right-2 text-[10px]">👑</span>
+                  <Crown className="w-3.5 h-3.5 text-amber-400 absolute -top-1.5 -right-1.5 drop-shadow" />
                 )}
               </div>
               <div className="text-right ltr:text-left text-[11px] font-bold leading-tight">
-                <div className="truncate max-w-[80px]">
-                  {currentUser ? currentUser.name : (language === 'en' ? 'Profile' : 'پروفایل')}
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate max-w-[90px]">
+                    {currentUser ? currentUser.name : (language === 'en' ? 'Profile' : 'پروفایل')}
+                  </span>
+                  {currentUser?.isVip && (
+                    <span className="px-1.5 py-0.5 text-[9px] font-black uppercase rounded-md bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 shadow-md shadow-amber-500/30 border border-yellow-200 flex items-center gap-0.5 shrink-0 tracking-wider">
+                      <Crown className="w-2.5 h-2.5 fill-slate-950 text-slate-950" />
+                      <span>VIP</span>
+                    </span>
+                  )}
                 </div>
                 <div className="text-[10px] text-amber-400 font-mono">
                   {currentUser?.isVip ? 'VIP Member' : (language === 'en' ? 'Login' : 'لاګین')}

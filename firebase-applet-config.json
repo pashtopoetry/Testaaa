@@ -1,6 +1,12 @@
 {
   "projectId": "brilliant-handler-4pt51",
-  "region": "europe-west2",
-  "databaseId": "(default)",
-  "firestore": true
+  "appId": "1:22942683567:web:10e9e831ca388b82cedf5a",
+  "apiKey": "AIzaSyC5TC83acfW2vRm3aLn2oZSQxNeiI9UP4s",
+  "authDomain": "brilliant-handler-4pt51.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-zamatv-35c04bc8-0cfb-4bb3-8778-51fcf85f01d5",
+  "storageBucket": "brilliant-handler-4pt51.firebasestorage.app",
+  "messagingSenderId": "22942683567",
+  "measurementId": "",
+  "oAuthClientId": "22942683567-ue3d3q100sh46s4udhl2vlh6u7c04ek9.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }
