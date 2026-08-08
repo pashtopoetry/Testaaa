@@ -25,12 +25,13 @@ import {
   Zap,
   Sparkles,
   Users,
-  Crown
+  Crown,
+  CreditCard
 } from 'lucide-react';
 import { afghanChannels } from '../data/channels';
 import { auth, db } from '../lib/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 
 interface AdminPanelProps {
   isOpen: boolean;
@@ -69,7 +70,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [isAddingNew, setIsAddingNew] = useState<boolean>(false);
 
-  const [adminTab, setAdminTab] = useState<'channels' | 'tickets' | 'plansConfig' | 'pendingPayments' | 'users' | 'reports'>('channels');
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [adminTab, setAdminTab] = useState<'channels' | 'tickets' | 'plansConfig' | 'paymentMethods' | 'users' | 'reports'>('channels');
   const [vipTickets, setVipTickets] = useState<any[]>([]);
   const [pendingPayments, setPendingPayments] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
@@ -232,6 +234,70 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Payment Methods Configuration State
+  const defaultPaymentMethods = [
+    { id: 'mpaisa', name: 'M-Paisa', accountDetails: 'M-Paisa: +93 799 123 456 (Zama TV Pay)', enabled: true },
+    { id: 'hesabpay', name: 'HesabPay', accountDetails: 'HesabPay ID: @zamatv | +93 79 555 1234', enabled: true },
+    { id: 'asan', name: 'Asan Khedmat', accountDetails: 'Asan Khedmat / Mobile: +93 788 123 456', enabled: true },
+    { id: 'bank', name: 'Bank Acc', accountDetails: 'Afghan United Bank ACC: 001-9988231 (Zama TV)', enabled: true }
+  ];
+
+  const [paymentMethods, setPaymentMethods] = useState<any[]>(() => {
+    const custom = localStorage.getItem('zama_payment_methods');
+    if (custom) {
+      try {
+        const parsed = JSON.parse(custom);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return defaultPaymentMethods;
+  });
+
+  const handleUpdatePaymentMethod = (index: number, field: string, value: any) => {
+    const updated = [...paymentMethods];
+    updated[index] = { ...updated[index], [field]: value };
+    setPaymentMethods(updated);
+    localStorage.setItem('zama_payment_methods', JSON.stringify(updated));
+
+    if (db) {
+      setDoc(doc(db, 'settings', 'payment_methods'), { methods: updated }, { merge: true }).catch(() => {});
+    }
+    setActionNotice(language === 'en' ? 'Payment method updated!' : 'د تادیې لاره په بریالیتوب اپډیټ شوه!');
+    setTimeout(() => setActionNotice(''), 2500);
+  };
+
+  const handleAddPaymentMethod = () => {
+    const newMethod = {
+      id: `payment-${Date.now()}`,
+      name: 'نوی د تادیې سیستم',
+      accountDetails: 'د حساب شمیره او معلومات داخل کړئ',
+      enabled: true
+    };
+    const updated = [...paymentMethods, newMethod];
+    setPaymentMethods(updated);
+    localStorage.setItem('zama_payment_methods', JSON.stringify(updated));
+
+    if (db) {
+      setDoc(doc(db, 'settings', 'payment_methods'), { methods: updated }, { merge: true }).catch(() => {});
+    }
+    setActionNotice(language === 'en' ? 'New payment method added!' : 'نوی د تادیې سیستم اضافه شو!');
+    setTimeout(() => setActionNotice(''), 2500);
+  };
+
+  const handleDeletePaymentMethod = (index: number) => {
+    if (window.confirm(language === 'en' ? 'Delete this payment method?' : 'ایا باوري یاست چې دا د تادیې لاره حذف کوئ؟')) {
+      const updated = paymentMethods.filter((_, i) => i !== index);
+      setPaymentMethods(updated);
+      localStorage.setItem('zama_payment_methods', JSON.stringify(updated));
+
+      if (db) {
+        setDoc(doc(db, 'settings', 'payment_methods'), { methods: updated }, { merge: true }).catch(() => {});
+      }
+      setActionNotice(language === 'en' ? 'Payment method deleted!' : 'د تادیې لاره حذف شوه!');
+      setTimeout(() => setActionNotice(''), 2500);
+    }
+  };
+
   // Load VIP Tickets, Pending Payments, Users, Reports
   useEffect(() => {
     if (isOpen) {
@@ -243,6 +309,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setReports(storedReports);
       const u = JSON.parse(localStorage.getItem('zama_users') || '[]');
       setUsersList(u);
+
+      if (db) {
+        getDoc(doc(db, 'settings', 'payment_methods')).then((snap) => {
+          if (snap.exists() && snap.data()?.methods) {
+            const remote = snap.data().methods;
+            if (Array.isArray(remote) && remote.length > 0) {
+              setPaymentMethods(remote);
+              localStorage.setItem('zama_payment_methods', JSON.stringify(remote));
+            }
+          }
+        }).catch(() => {});
+      }
     }
   }, [isOpen, actionNotice]);
 
@@ -274,47 +352,74 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     localStorage.setItem('zama_vip_tickets', JSON.stringify(updatedTickets));
     setVipTickets(updatedTickets);
 
-    try {
-      await setDoc(doc(db, 'vip_tickets', ticketId), { status: 'approved' }, { merge: true });
-    } catch (e) {}
-
     const daysToAdd = targetTicket?.days || 30;
     const now = new Date();
     const expiryDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
 
+    const userEmail = (targetTicket?.userEmail || ticketIdentifier || '').trim().toLowerCase();
+    const userPassword = (targetTicket?.userPassword || '123456').trim();
+
+    // 1. Create account in Firebase Auth if email and password available
+    if (userEmail && userEmail.includes('@') && userPassword && userPassword.length >= 4) {
+      try {
+        await createUserWithEmailAndPassword(auth, userEmail, userPassword);
+      } catch (authErr: any) {
+        console.warn("Firebase Auth creation during approval:", authErr?.message);
+      }
+    }
+
+    // 2. Save ticket approval in Firestore
+    try {
+      await setDoc(doc(db, 'vip_tickets', ticketId), { 
+        status: 'approved',
+        approvedAt: now.toISOString(),
+        vipExpiresAt: expiryDate.toISOString()
+      }, { merge: true });
+    } catch (e) {
+      console.warn("Firestore ticket update error:", e);
+    }
+
+    // 3. Update local users and Firestore users collection
     const users = JSON.parse(localStorage.getItem('zama_users') || '[]');
     let userFound = false;
 
     const updatedUsers = users.map((u: any) => {
-      const isMatch = (targetTicket?.userEmail && u.email?.toLowerCase() === targetTicket.userEmail.toLowerCase()) ||
+      const isMatch = (userEmail && u.email?.toLowerCase() === userEmail) ||
                       (targetTicket?.userId && u.id === targetTicket.userId) ||
-                      (u.username === ticketIdentifier || u.email === ticketIdentifier);
+                      (u.username === ticketIdentifier);
       if (isMatch) {
         userFound = true;
         const updated = {
           ...u,
+          email: userEmail || u.email,
+          password: userPassword || u.password,
           isVip: true,
           hasPendingVip: false,
           vipStartedAt: now.toISOString(),
           vipExpiresAt: expiryDate.toISOString(),
           vipExpiry: expiryDate.toISOString().split('T')[0]
         };
-        if (u.id) {
-          setDoc(doc(db, 'users', u.id), updated, { merge: true }).catch(() => {});
+        
+        if (db) {
+          const docId = u.id || userEmail.replace(/[^a-zA-Z0-9]/g, '_');
+          setDoc(doc(db, 'users', docId), updated, { merge: true }).catch(() => {});
+          if (userEmail) {
+            setDoc(doc(db, 'users', userEmail.replace(/[^a-zA-Z0-9]/g, '_')), updated, { merge: true }).catch(() => {});
+          }
         }
         return updated;
       }
       return u;
     });
 
-    if (!userFound && targetTicket?.userEmail) {
+    if (!userFound && userEmail) {
       const newVipUser = {
-        id: targetTicket.userId || `user-${Date.now()}`,
-        name: targetTicket.userName || targetTicket.userEmail.split('@')[0],
-        email: targetTicket.userEmail,
-        password: targetTicket.userPassword || '123456',
-        phone: targetTicket.userPhone || '',
-        avatar: targetTicket.userAvatar || null,
+        id: targetTicket?.userId || `user-${Date.now()}`,
+        name: targetTicket?.userName || userEmail.split('@')[0],
+        email: userEmail,
+        password: userPassword,
+        phone: targetTicket?.userPhone || '',
+        avatar: targetTicket?.userAvatar || null,
         isVip: true,
         hasPendingVip: false,
         vipStartedAt: now.toISOString(),
@@ -323,15 +428,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         createdAt: now.toISOString()
       };
       updatedUsers.push(newVipUser);
-      setDoc(doc(db, 'users', newVipUser.id), newVipUser, { merge: true }).catch(() => {});
+
+      if (db) {
+        const docId = newVipUser.id;
+        const emailDocId = userEmail.replace(/[^a-zA-Z0-9]/g, '_');
+        setDoc(doc(db, 'users', docId), newVipUser, { merge: true }).catch(() => {});
+        setDoc(doc(db, 'users', emailDocId), newVipUser, { merge: true }).catch(() => {});
+      }
     }
 
     localStorage.setItem('zama_users', JSON.stringify(updatedUsers));
     setUsersList(updatedUsers);
 
-    // Update active currentUser if it matches
+    // Update active currentUser if matching
     const currUser = JSON.parse(localStorage.getItem('zama_current_user') || 'null');
-    if (currUser && (currUser.email?.toLowerCase() === targetTicket?.userEmail?.toLowerCase() || currUser.id === targetTicket?.userId)) {
+    if (currUser && (currUser.email?.toLowerCase() === userEmail || currUser.id === targetTicket?.userId)) {
       const updatedCurr = {
         ...currUser,
         isVip: true,
@@ -343,7 +454,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       localStorage.setItem('zama_current_user', JSON.stringify(updatedCurr));
     }
 
-    setActionNotice(language === 'en' ? 'VIP request approved & activated successfully!' : 'د VIP غړیتوب غوښتنه تایید او حساب فعال شو!');
+    setActionNotice(language === 'en' ? 'VIP request approved & account registered in Firebase!' : 'د VIP غړیتوب غوښتنه تایید شوه او اکونټ فایربیس کې ثبت شو!');
     setTimeout(() => setActionNotice(''), 3000);
   };
 
@@ -798,28 +909,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </button>
           <button
             onClick={() => setAdminTab('plansConfig')}
-            className={`flex-1 py-3 px-4 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 relative ${
+            className={`flex-1 py-3 px-3 rounded-lg text-xs font-black transition flex items-center justify-center gap-1.5 relative ${
               adminTab === 'plansConfig'
                 ? 'bg-amber-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <span>👑 د پلانونو تنظیمات (Plans)</span>
+            <span>👑 پلانونو تنظیمات (Plans)</span>
           </button>
           <button
-            onClick={() => setAdminTab('pendingPayments')}
-            className={`flex-1 py-3 px-4 rounded-lg text-xs font-black transition flex items-center justify-center gap-2 relative ${
-              adminTab === 'pendingPayments'
+            onClick={() => setAdminTab('paymentMethods')}
+            className={`flex-1 py-3 px-3 rounded-lg text-xs font-black transition flex items-center justify-center gap-1.5 relative ${
+              adminTab === 'paymentMethods'
                 ? 'bg-emerald-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <span>💳 پاتې تادیات (Pending Payments)</span>
-            {pendingPayments.filter(p => p.status === 'pending').length > 0 && (
-              <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">
-                {pendingPayments.filter(p => p.status === 'pending').length}
-              </span>
-            )}
+            <span>💳 د تادیې لارې (Payment Methods)</span>
           </button>
           <button
             onClick={() => setAdminTab('users')}
@@ -969,18 +1075,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           <span className="text-[10px] text-slate-400">{ticket.screenshot ? 'عکس اپلوډ شوی دی' : 'عکس نشته'}</span>
                         </div>
                         {ticket.screenshot && (
-                          <a
-                            href={ticket.screenshot}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="relative group w-20 h-14 rounded overflow-hidden border border-slate-700 bg-slate-950 block shrink-0"
-                            title="د پیمینټ عکس غټ لیدلو لپاره کلیک وکړئ"
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImage(ticket.screenshot)}
+                            className="relative group w-24 h-16 rounded-xl overflow-hidden border-2 border-emerald-500/50 hover:border-emerald-400 bg-slate-950 block shrink-0 transition shadow-lg cursor-pointer"
+                            title="د پیمینټ رسید عکس غټ لیدلو لپاره دلته کلیک وکړئ 🔍"
                           >
-                            <img src={ticket.screenshot} alt="Payment Receipt" className="w-full h-full object-cover group-hover:scale-105 transition" />
-                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-[9px] text-white font-bold">
-                              لیدل 🔍
+                            <img src={ticket.screenshot} alt="Payment Receipt" className="w-full h-full object-cover group-hover:scale-110 transition duration-300" />
+                            <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[1px] flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition text-[10px] text-white font-black gap-1">
+                              <span>🔍 غټول</span>
                             </div>
-                          </a>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1237,6 +1342,94 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         onChange={(e) => handleUpdatePlan(index, 'description', e.target.value)}
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-amber-500"
                         placeholder="د پلان لنډ تشریح..."
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : adminTab === 'paymentMethods' ? (
+          /* =========================================================================
+             💳 PAYMENT METHODS CONFIGURATION TAB
+             ========================================================================= */
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-black text-white flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-emerald-400" />
+                  <span>د تادیې د لارو او حسابونو مدیریت (Payment Methods Management)</span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  دلته تاسو کولی شئ د تادیې بیلابیل لاری، شمیرې او لارښوونې جوړې یا ایډیټ کړئ چې پیرودونکو ته د VIP پلان اخیستلو په وخت کې وښودل شي.
+                </p>
+              </div>
+
+              <button
+                onClick={handleAddPaymentMethod}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs rounded-xl transition shadow-lg flex items-center gap-1.5 shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ نوی د تادیې سیستم اضافه کړه</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {paymentMethods.map((method: any, index: number) => (
+                <div key={method.id || index} className={`p-4 rounded-2xl border-2 transition shadow-lg relative space-y-3.5 ${
+                  method.enabled !== false 
+                    ? 'border-emerald-500/40 bg-slate-950/70' 
+                    : 'border-slate-800 bg-slate-950/30 opacity-60'
+                }`}>
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                    <span className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
+                      <CreditCard className="w-4 h-4 text-emerald-400" />
+                      <span>{method.name || `سیستم #${index + 1}`}</span>
+                    </span>
+
+                    <div className="flex items-center gap-2">
+                      {/* Active / Inactive Toggle */}
+                      <button
+                        onClick={() => handleUpdatePaymentMethod(index, 'enabled', !(method.enabled !== false))}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-black border transition flex items-center gap-1 ${
+                          method.enabled !== false
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : 'bg-slate-800 text-slate-400 border-slate-700'
+                        }`}
+                        title="د تادیې لاره فعاله او غیرفعاله کول"
+                      >
+                        <span>{method.enabled !== false ? '✓ فعال (Active)' : '✕ غیرفعال'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleDeletePaymentMethod(index)}
+                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs transition"
+                        title="سیستم حذف کړه"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">د تادیې سیستم نوم (Method Name)</label>
+                      <input 
+                        value={method.name || ''}
+                        onChange={(e) => handleUpdatePaymentMethod(index, 'name', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-bold"
+                        placeholder="مثلا: M-Paisa, HesabPay, EasyPaisa, Bank Acc"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">د حساب شمیره او معلومات (Account Number & Instructions)</label>
+                      <textarea 
+                        rows={2}
+                        value={method.accountDetails || ''}
+                        onChange={(e) => handleUpdatePaymentMethod(index, 'accountDetails', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-amber-300 focus:outline-none focus:border-emerald-500 font-mono"
+                        placeholder="مثلا: M-Paisa: +93 799 123 456 (Zama TV Pay)"
                       />
                     </div>
                   </div>
@@ -1998,6 +2191,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               </form>
             </div>
+          </div>
+        )}
+
+        {/* FULLSCREEN IMAGE LIGHTBOX PREVIEW MODAL */}
+        {previewImage && (
+          <div className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-3 sm:p-6 animate-fadeIn">
+            <div className="absolute top-4 right-4 flex items-center gap-3 z-10">
+              <a
+                href={previewImage}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700 transition flex items-center gap-1.5"
+              >
+                <span>پوره اندازه خلاصول ↗</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="p-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-black text-sm transition shadow-lg"
+                title="بندول"
+              >
+                ✕ بندول
+              </button>
+            </div>
+
+            <div 
+              className="relative max-w-4xl max-h-[85vh] w-full h-full flex items-center justify-center cursor-pointer p-2"
+              onClick={() => setPreviewImage(null)}
+            >
+              <img 
+                src={previewImage} 
+                alt="Payment Receipt Large View" 
+                className="max-w-full max-h-[82vh] object-contain rounded-2xl shadow-2xl border-2 border-emerald-500/40"
+              />
+            </div>
+            <p className="text-xs text-slate-400 pt-2 font-medium">
+              د سکرین بندولو لپاره بل ځای کلیک وکړئ یا د (بندول) تڼۍ ووهئ.
+            </p>
           </div>
         )}
 

@@ -156,11 +156,11 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       checkUserTicketStatus();
-      if (currentUser?.hasPendingVip && !userTicket) {
+      if (currentUser?.hasPendingVip || userTicket?.status === 'pending') {
         setViewMode('review');
       }
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, userTicket]);
 
   // Interval check when in review view
   useEffect(() => {
@@ -298,13 +298,60 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
     }
   }, [isOpen]);
 
-  // Static Afghan Payment Account references
-  const paymentNumbers = {
-    mpaisa: 'M-Paisa: +93 799 123 456 (Zama TV Pay)',
-    hesabpay: 'HesabPay ID: @zamatv | +93 79 555 1234',
-    asan: 'Asan Khedmat / Mobile: +93 788 123 456',
-    bank: 'Afghan United Bank ACC: 001-9988231 (Zama TV)',
-    coupon: 'د کوپن کوډ داخل کړئ'
+  // Dynamic Afghan Payment Account references
+  const defaultPaymentMethodsList = [
+    { id: 'mpaisa', name: 'M-Paisa', accountDetails: 'M-Paisa: +93 799 123 456 (Zama TV Pay)', enabled: true },
+    { id: 'hesabpay', name: 'HesabPay', accountDetails: 'HesabPay ID: @zamatv | +93 79 555 1234', enabled: true },
+    { id: 'asan', name: 'Asan Khedmat', accountDetails: 'Asan Khedmat / Mobile: +93 788 123 456', enabled: true },
+    { id: 'bank', name: 'Bank Acc', accountDetails: 'Afghan United Bank ACC: 001-9988231 (Zama TV)', enabled: true }
+  ];
+
+  const [paymentMethodsList, setPaymentMethodsList] = useState<any[]>(() => {
+    const custom = localStorage.getItem('zama_payment_methods');
+    if (custom) {
+      try {
+        const parsed = JSON.parse(custom);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return defaultPaymentMethodsList;
+  });
+
+  // Sync payment methods when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const custom = localStorage.getItem('zama_payment_methods');
+      if (custom) {
+        try {
+          const parsed = JSON.parse(custom);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setPaymentMethodsList(parsed);
+          }
+        } catch (e) {}
+      }
+
+      if (db) {
+        getDoc(doc(db, 'settings', 'payment_methods')).then((snap) => {
+          if (snap.exists() && snap.data()?.methods) {
+            const remote = snap.data().methods;
+            if (Array.isArray(remote) && remote.length > 0) {
+              setPaymentMethodsList(remote);
+              localStorage.setItem('zama_payment_methods', JSON.stringify(remote));
+            }
+          }
+        }).catch(() => {});
+      }
+    }
+  }, [isOpen]);
+
+  const activeMethods = paymentMethodsList.filter((m: any) => m.enabled !== false);
+
+  const getAccountDetailsForMethod = (methodId: string) => {
+    if (methodId === 'coupon') return 'د کوپن کوډ داخل کړئ';
+    const found = paymentMethodsList.find((m: any) => m.id === methodId);
+    if (found && found.accountDetails) return found.accountDetails;
+    if (activeMethods.length > 0 && activeMethods[0].accountDetails) return activeMethods[0].accountDetails;
+    return 'د حساب اطلاعات لا نه دی ثبت شوی';
   };
 
   // Pre-fill user data when modal opens or user changes
@@ -587,9 +634,20 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
       }
       localStorage.setItem('zama_users', JSON.stringify(usersList));
 
+      // Register user in Firebase Auth if available
+      if (auth && newTicket.userEmail && newTicket.userPassword) {
+        try {
+          await createUserWithEmailAndPassword(auth, newTicket.userEmail, newTicket.userPassword);
+        } catch (authErr: any) {
+          console.warn("Firebase Auth submission registration note:", authErr?.message);
+        }
+      }
+
       // Save user to Firestore
       try {
+        const emailDocId = newTicket.userEmail.replace(/[^a-zA-Z0-9]/g, '_');
         await setDoc(doc(db, 'users', newUserObj.id), newUserObj, { merge: true });
+        await setDoc(doc(db, 'users', emailDocId), newUserObj, { merge: true });
       } catch (e) {
         console.warn("Firestore user save error:", e);
       }
@@ -911,23 +969,18 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
                   </label>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                    {[
-                      { id: 'mpaisa', label: 'M-Paisa' },
-                      { id: 'hesabpay', label: 'HesabPay' },
-                      { id: 'asan', label: 'Asan' },
-                      { id: 'bank', label: 'Bank Acc' }
-                    ].map((method) => (
+                    {activeMethods.map((method: any) => (
                       <button
                         key={method.id}
                         type="button"
-                        onClick={() => setPaymentMethod(method.id as any)}
+                        onClick={() => setPaymentMethod(method.id)}
                         className={`py-2 px-2 rounded-xl text-xs font-bold border transition ${
                           paymentMethod === method.id
                             ? 'bg-rose-500/20 border-rose-500 text-rose-300 shadow'
                             : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-900'
                         }`}
                       >
-                        {method.label}
+                        {method.name}
                       </button>
                     ))}
                   </div>
@@ -938,7 +991,7 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
                       <span className="text-slate-400 font-bold">{language === 'en' ? 'Send Payment To:' : 'پیسې دې شمیرې ته واستوئ:'}</span>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(paymentNumbers[paymentMethod])}
+                        onClick={() => copyToClipboard(getAccountDetailsForMethod(paymentMethod))}
                         className="text-[10px] text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 px-2 py-0.5 rounded border border-rose-500/30 flex items-center gap-1 transition"
                       >
                         <Copy className="w-3 h-3" />
@@ -947,7 +1000,7 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
                     </div>
                     
                     <div className="p-2.5 bg-slate-900 rounded-lg text-xs font-mono font-bold text-amber-300 text-center select-all border border-slate-800">
-                      {paymentNumbers[paymentMethod]}
+                      {getAccountDetailsForMethod(paymentMethod)}
                     </div>
                   </div>
                 </div>
@@ -1007,11 +1060,11 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
                   className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 via-green-600 to-emerald-600 hover:from-emerald-500 hover:to-green-500 text-white font-black text-xs shadow-lg shadow-emerald-950/40 transition flex items-center justify-center gap-2"
                 >
                   {isSubmitting ? (
-                    <span>{language === 'en' ? 'Submitting...' : 'معلومات اډمین ته لیږل کیږي...'}</span>
+                    <span>{language === 'en' ? 'Please wait, reviewing details...' : 'مهرباني وکړئ صبر وکړئ، ستاسې معلومات کتل کېږي...'}</span>
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 text-amber-300" />
-                      <span>{language === 'en' ? 'Submit Order to Admin' : 'د VIP غوښتنه او رسید اډمین ته لیږل 🚀'}</span>
+                      <span>{language === 'en' ? 'Submit Order to Admin' : 'معلومات اډمین ته لیږل کیږي...'}</span>
                     </>
                   )}
                 </button>
@@ -1103,10 +1156,10 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
                       Review - د اډمین تر څېړنې لاندې
                     </span>
                     <h4 className="text-lg font-black text-white pt-1">
-                      ستاسو معلومات د اډمین لخوا تر بررسی / Review لاندې دي ⏳
+                      مهرباني وکړئ صبر وکړئ، ستاسې معلومات کتل کېږي ⏳
                     </h4>
-                    <p className="text-xs text-amber-200/80 font-medium max-w-sm mx-auto leading-relaxed pt-1">
-                      ستاسو لخوا لیږل شوی د تادیې رسید او معلومات زموږ اډمین ته رسیدلي دي. مهرباني وکړئ یو څه شیبه انتظار وکړئ.
+                    <p className="text-xs text-amber-200/90 font-medium max-w-sm mx-auto leading-relaxed pt-1">
+                      ستاسو لخوا لیږل شوی د تادیې رسید او د پلان ټول معلومات اډمین ته ورسېدل. اډمین به یې ژر شېبه کې وڅېړي. کله چې کتنې وروسته ومنل شي، همدا ځای کې به وښودل شي: <strong className="text-emerald-400">"ستاسې غوښتنه ومنل شوه!"</strong>
                     </p>
                   </div>
 
