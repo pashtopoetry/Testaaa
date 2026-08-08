@@ -29,8 +29,7 @@ export const CustomStreamModal: React.FC<CustomStreamModalProps> = ({
     if (!url.trim() || !title.trim()) return;
 
     const trimmedUrl = url.trim();
-    const isTelegram = trimmedUrl.includes('t.me/');
-    const isMovie = category === 'movies' || isTelegram;
+    const isMovie = category === 'movies';
 
     const newChannel: Channel = {
       id: 'custom_' + Date.now(),
@@ -41,15 +40,14 @@ export const CustomStreamModal: React.FC<CustomStreamModalProps> = ({
         : 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?auto=format&fit=crop&w=300&q=80',
       category: category,
       province: 'kabul',
-      location: isTelegram ? 'تلګرام ویډیو / فلم' : 'zamatv.site - دودیز',
+      location: 'zamatv.site - دودیز',
       quality: '1080p HD',
       isLive: !isMovie,
       isMovie: isMovie,
       viewers: 120,
       likes: 85,
-      description: isMovie ? 'د تلګرام څخه زیات شوی پښتو فلم' : 'د zamatv.site لپاره اضافه شوی مستقیم سټریم لینک',
+      description: isMovie ? 'اضافه شوی پښتو فلم' : 'د zamatv.site لپاره اضافه شوی مستقیم سټریم لینک',
       streamUrl: trimmedUrl,
-      telegramUrl: isTelegram ? trimmedUrl : undefined,
       language: 'پښتو (Pashto)',
       epg: []
     };
@@ -108,20 +106,20 @@ export const CustomStreamModal: React.FC<CustomStreamModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1">{t.streamUrl} / تلګرام ویډیو لینک</label>
+            <label className="block text-xs font-bold text-slate-300 mb-1">{t.streamUrl}</label>
             <div className="relative">
               <Link className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 ltr:right-auto ltr:left-3" />
               <input
                 type="url"
                 required
-                placeholder="https://t.me/PashtoMovies/101 یا MP4/m3u8"
+                placeholder="https://... MP4/m3u8"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl pr-9 pl-3.5 ltr:pr-3.5 ltr:pl-9 py-2 text-xs text-white font-mono focus:outline-none focus:border-rose-500"
               />
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
-              تاسې کولای شئ مستقیم د تلګرام لینک (t.me/channel/id) یا ویډیو سټریم اچولی شئ.
+              تاسې کولای شئ مستقیم د ویډیو سټریم لینک (MP4 یا HLS / m3u8) واچوئ.
             </p>
           </div>
 

@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { getAuth } from "firebase/auth";
-import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
+import { getFirestore } from "firebase/firestore";
 import { getDatabase } from "firebase/database";
 import appletConfig from "../../firebase-applet-config.json";
 
@@ -23,18 +23,6 @@ export const db = appletConfig.firestoreDatabaseId
   ? getFirestore(app, appletConfig.firestoreDatabaseId)
   : getFirestore(app);
 export const rtdb = getDatabase(app);
-
-// Test connection
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
-    }
-  }
-}
-testConnection();
 
 export enum OperationType {
   CREATE = 'create',

@@ -104,24 +104,41 @@ export default function App() {
       if (firebaseUser) {
         try {
           const userRef = doc(db, 'users', firebaseUser.uid);
-          const userSnap = await getDoc(userRef);
+          let userSnap = await getDoc(userRef);
+
+          if (!userSnap.exists() && firebaseUser.email) {
+            const emailDocId = firebaseUser.email.replace(/[^a-zA-Z0-9]/g, '_');
+            userSnap = await getDoc(doc(db, 'users', emailDocId));
+          }
+
           if (userSnap.exists()) {
             const firestoreData = userSnap.data();
-            setCurrentUser(firestoreData);
-            localStorage.setItem('zama_current_user', JSON.stringify(firestoreData));
+            const isVipApproved = Boolean(firestoreData.isVIP ?? firestoreData.isVip);
+            const userObj = {
+              ...firestoreData,
+              id: firestoreData.id || firebaseUser.uid,
+              email: firestoreData.email || firebaseUser.email,
+              isVip: isVipApproved,
+              isVIP: isVipApproved
+            };
+            setCurrentUser(userObj);
+            localStorage.setItem('zama_current_user', JSON.stringify(userObj));
           } else {
             // Check local users list for fallback
             const users = JSON.parse(localStorage.getItem('zama_users') || '[]');
             const localUser = users.find((u: any) => u.email?.toLowerCase() === firebaseUser.email?.toLowerCase() || u.id === firebaseUser.uid);
             if (localUser) {
-              setCurrentUser(localUser);
-              localStorage.setItem('zama_current_user', JSON.stringify(localUser));
+              const isVipApproved = Boolean(localUser.isVIP ?? localUser.isVip);
+              const userObj = { ...localUser, isVip: isVipApproved, isVIP: isVipApproved };
+              setCurrentUser(userObj);
+              localStorage.setItem('zama_current_user', JSON.stringify(userObj));
             } else {
               const fallbackUser = {
                 id: firebaseUser.uid,
                 name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
                 email: firebaseUser.email || '',
-                isVip: false
+                isVip: false,
+                isVIP: false
               };
               setCurrentUser(fallbackUser);
               localStorage.setItem('zama_current_user', JSON.stringify(fallbackUser));

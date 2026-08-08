@@ -303,44 +303,49 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {/* Profile / VIP Avatar Icon (Like a Profile Button) */}
-            <button
-              onClick={onOpenPremium}
-              className={`relative flex items-center gap-2 p-1.5 px-3 rounded-xl border transition shadow-sm ${
-                currentUser?.isVip
-                  ? 'bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-amber-500/20 border-amber-500/60 text-amber-300 shadow-amber-900/40 ring-1 ring-amber-500/30'
-                  : currentUser
-                  ? 'bg-rose-600/20 border-rose-500/40 text-rose-300'
-                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750'
-              }`}
-              title={currentUser ? `${currentUser.name} (${currentUser.isVip ? 'VIP' : 'Free'})` : 'د پروفایل/VIP لاګین'}
-            >
-              <div className="relative w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center text-xs font-black shadow-inner shrink-0">
-                {currentUser ? (
-                  <span className="text-rose-400 uppercase">{currentUser.name?.[0] || 'U'}</span>
-                ) : (
-                  <User className="w-4 h-4 text-slate-400" />
-                )}
-                {currentUser?.isVip && (
-                  <Crown className="w-3.5 h-3.5 text-amber-400 absolute -top-1.5 -right-1.5 drop-shadow" />
-                )}
-              </div>
-              <div className="text-right ltr:text-left text-[11px] font-bold leading-tight">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate max-w-[90px]">
-                    {currentUser ? currentUser.name : (language === 'en' ? 'Profile' : 'پروفایل')}
-                  </span>
-                  {currentUser?.isVip && (
-                    <span className="px-1.5 py-0.5 text-[9px] font-black uppercase rounded-md bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 shadow-md shadow-amber-500/30 border border-yellow-200 flex items-center gap-0.5 shrink-0 tracking-wider">
-                      <Crown className="w-2.5 h-2.5 fill-slate-950 text-slate-950" />
-                      <span>VIP</span>
-                    </span>
-                  )}
-                </div>
-                <div className="text-[10px] text-amber-400 font-mono">
-                  {currentUser?.isVip ? 'VIP Member' : (language === 'en' ? 'Login' : 'لاګین')}
-                </div>
-              </div>
-            </button>
+            {(() => {
+              const isVipUser = Boolean(currentUser?.isVIP || currentUser?.isVip);
+              return (
+                <button
+                  onClick={onOpenPremium}
+                  className={`relative flex items-center gap-2 p-1.5 px-3 rounded-xl border transition shadow-sm ${
+                    isVipUser
+                      ? 'bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-amber-500/20 border-amber-500/60 text-amber-300 shadow-amber-900/40 ring-1 ring-amber-500/30'
+                      : currentUser
+                      ? 'bg-rose-600/20 border-rose-500/40 text-rose-300'
+                      : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750'
+                  }`}
+                  title={currentUser ? `${currentUser.name} (${isVipUser ? 'VIP' : 'Free'})` : 'د پروفایل/VIP لاګین'}
+                >
+                  <div className="relative w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center text-xs font-black shadow-inner shrink-0">
+                    {currentUser ? (
+                      <span className="text-rose-400 uppercase">{currentUser.name?.[0] || 'U'}</span>
+                    ) : (
+                      <User className="w-4 h-4 text-slate-400" />
+                    )}
+                    {isVipUser && (
+                      <Crown className="w-3.5 h-3.5 text-amber-400 absolute -top-1.5 -right-1.5 drop-shadow" />
+                    )}
+                  </div>
+                  <div className="text-right ltr:text-left text-[11px] font-bold leading-tight">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate max-w-[90px]">
+                        {currentUser ? currentUser.name : (language === 'en' ? 'Profile' : 'پروفایل')}
+                      </span>
+                      {isVipUser && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-black uppercase rounded-md bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 shadow-md shadow-amber-500/30 border border-yellow-200 flex items-center gap-0.5 shrink-0 tracking-wider">
+                          <Crown className="w-2.5 h-2.5 fill-slate-950 text-slate-950" />
+                          <span>VIP</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-amber-400 font-mono">
+                      {isVipUser ? 'VIP Member' : (language === 'en' ? 'Login' : 'لاګین')}
+                    </div>
+                  </div>
+                </button>
+              );
+            })()}
 
           </div>
         </div>

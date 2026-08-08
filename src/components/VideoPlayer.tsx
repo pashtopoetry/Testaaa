@@ -641,19 +641,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           {/* Interactive Buttons Right */}
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
             
-            {(channel.telegramUrl || channel.streamUrl.includes('t.me/')) && (
-              <a
-                href={channel.telegramUrl || channel.streamUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-all duration-200 shadow-lg shadow-sky-900/30 hover:scale-105 shrink-0"
-                title="د ټیلیګرام کانال خلاص کړئ"
-              >
-                <Send className="w-4 h-4" />
-                <span>ټیلیګرام کې لیدل</span>
-              </a>
-            )}
-
             {/* Favorite / Save Bookmark Button */}
             <button
               onClick={onToggleFavorite}

@@ -77,7 +77,6 @@ export interface Channel {
   language: string;        // Primary broadcast language
   isRadio?: boolean;
   isMovie?: boolean;
-  telegramUrl?: string;
   duration?: string;
   releaseYear?: string;
   imdbRating?: string;

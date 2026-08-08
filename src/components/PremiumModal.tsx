@@ -369,15 +369,18 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
 
   // Calculate Days Remaining
   const getVipRemainingDays = () => {
-    if (!currentUser?.isVip || !currentUser?.vipExpiresAt) return 0;
+    const isVipFlag = Boolean(currentUser?.isVIP || currentUser?.isVip);
+    if (!isVipFlag || !currentUser?.vipExpiresAt) return 0;
     const now = new Date().getTime();
     const expiry = new Date(currentUser.vipExpiresAt).getTime();
+    if (isNaN(expiry)) return 0;
     const diffMs = expiry - now;
     if (diffMs <= 0) return 0;
     return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
   };
 
   const remainingDays = getVipRemainingDays();
+  const isApprovedVip = Boolean(currentUser?.isVIP || currentUser?.isVip) && remainingDays > 0;
 
   // Helper for uploading files and converting to base64
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, callback: (base64: string) => void) => {
@@ -1520,54 +1523,75 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
                 </form>
               )}
 
-              {/* 👑 VIP DAYS REMAINING COUNTER WIDGET */}
-              {currentUser.isVip ? (
-                <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-950/30 via-slate-950 to-slate-950 border-2 border-amber-500/40 space-y-4 shadow-xl relative overflow-hidden">
-                  <div className="flex items-center justify-between border-b border-amber-500/20 pb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
-                        <Crown className="w-5 h-5 animate-bounce" />
+              {/* 👑 VIP DASHBOARD VS STANDARD PROFILE LAYOUT */}
+              {isApprovedVip ? (
+                /* DEDICATED VIP PROFILE DASHBOARD (isVIP: true) */
+                <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-amber-950/40 via-slate-950 to-slate-950 border-2 border-amber-500/50 space-y-5 shadow-2xl relative overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-amber-500/30 pb-3.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center font-black shadow-lg shadow-amber-950">
+                        <Crown className="w-6 h-6 fill-slate-950 animate-bounce" />
                       </div>
                       <div>
-                        <h5 className="text-xs font-black text-amber-300 uppercase tracking-wide">ستاسو د VIP پلان پاتې شوې ورځې</h5>
-                        <p className="text-[11px] text-slate-400">VIP Subscription Validity</p>
+                        <h5 className="text-sm font-black text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <span>VIP Profile Dashboard</span>
+                          <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">Approved VIP</span>
+                        </h5>
+                        <p className="text-[11px] text-slate-400">ستاسو د زما ټلویزیون ځانګړی VIP اکونټ ډشبورډ</p>
                       </div>
                     </div>
 
-                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-1 rounded-xl text-xs font-black">
-                      ✓ فعال اکونټ
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3 py-1 rounded-full text-xs font-black shadow flex items-center gap-1">
+                      <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>فعال VIP غړی</span>
                     </span>
                   </div>
 
-                  {/* Big Number Remaining Days */}
-                  <div className="flex items-center justify-between bg-slate-900/80 p-4 rounded-xl border border-slate-800">
-                    <div className="space-y-0.5">
-                      <div className="text-3xl font-black text-amber-400 font-mono">
-                        {remainingDays} <span className="text-sm font-sans text-slate-300">ورځې</span>
-                      </div>
-                      <p className="text-xs text-slate-400">
-                        {remainingDays > 0 ? `${remainingDays} ورځې پاتې دي` : 'د غړیتوب وخت ختم شوی'}
-                      </p>
+                  {/* VIP Membership Details Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center sm:text-right ltr:sm:text-left">
+                    {/* 1. Plan Name */}
+                    <div className="p-3 bg-slate-900/90 rounded-2xl border border-amber-500/30 space-y-1">
+                      <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">د VIP پلان نوم</span>
+                      <strong className="text-xs sm:text-sm font-black text-amber-300 font-mono block truncate">
+                        👑 {currentUser.vipPlanName || currentUser.planTitle || currentUser.planName || '1 Month VIP'}
+                      </strong>
                     </div>
 
-                    <div className="text-right text-xs font-mono space-y-1">
-                      <span className="text-slate-400 block text-[10px]">د پای نیټه (Expiry):</span>
-                      <strong className="text-emerald-400 font-bold block bg-slate-950 px-2 py-1 rounded border border-slate-800">
-                        {currentUser.vipExpiresAt ? new Date(currentUser.vipExpiresAt).toISOString().split('T')[0] : '—'}
+                    {/* 2. Start Date */}
+                    <div className="p-3 bg-slate-900/90 rounded-2xl border border-slate-800 space-y-1">
+                      <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">د پیل نیټه (Start Date)</span>
+                      <strong className="text-xs sm:text-sm font-bold text-slate-200 font-mono block">
+                        📅 {currentUser.vipStartedAt ? new Date(currentUser.vipStartedAt).toLocaleDateString() : (currentUser.createdAt ? new Date(currentUser.createdAt).toLocaleDateString() : '—')}
+                      </strong>
+                    </div>
+
+                    {/* 3. Expiry Date */}
+                    <div className="p-3 bg-slate-900/90 rounded-2xl border border-slate-800 space-y-1">
+                      <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">د پای نیټه (Expiry Date)</span>
+                      <strong className="text-xs sm:text-sm font-bold text-emerald-400 font-mono block">
+                        ⏳ {currentUser.vipExpiresAt ? new Date(currentUser.vipExpiresAt).toLocaleDateString() : '—'}
+                      </strong>
+                    </div>
+
+                    {/* 4. Remaining Days */}
+                    <div className="p-3 bg-gradient-to-br from-amber-500/20 to-amber-600/10 rounded-2xl border border-amber-500/40 space-y-1 shadow">
+                      <span className="text-[10px] text-amber-300 font-bold block uppercase tracking-wider">پاتې شوې ورځې</span>
+                      <strong className="text-sm sm:text-base font-black text-amber-400 font-mono block">
+                        🔥 {remainingDays} ورځې
                       </strong>
                     </div>
                   </div>
 
-                  {/* Progress bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] font-bold text-slate-400">
-                      <span>مصرف شوی وخت</span>
-                      <span className="text-amber-400">{remainingDays} / 30 ورځې پاتې</span>
+                  {/* Progress Bar widget */}
+                  <div className="space-y-1.5 bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800">
+                    <div className="flex justify-between text-xs font-bold text-slate-300">
+                      <span>د VIP غړیتوب لړۍ</span>
+                      <span className="text-amber-400 font-mono">{remainingDays} / 30+ ورځې باقي</span>
                     </div>
-                    <div className="w-full bg-slate-900 h-2.5 rounded-full overflow-hidden border border-slate-800">
+                    <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
                       <div 
-                        className="bg-gradient-to-r from-amber-500 to-rose-500 h-full rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(100, Math.max(5, (remainingDays / 30) * 100))}%` }}
+                        className="bg-gradient-to-r from-amber-500 via-yellow-400 to-rose-500 h-full rounded-full transition-all duration-700 shadow-md shadow-amber-500/50"
+                        style={{ width: `${Math.min(100, Math.max(8, (remainingDays / 30) * 100))}%` }}
                       />
                     </div>
                   </div>
@@ -1575,56 +1599,94 @@ export const PremiumModal: React.FC<PremiumModalProps> = ({
                   {/* Benefits Unlocked Checklist */}
                   <div className="pt-2 space-y-2 border-t border-slate-800/80">
                     <h6 className="text-xs font-extrabold text-white flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>ستاسو اکونټ لاندې ټولو اسانتیاو ته ازاده رسېدنه لري:</span>
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>ستاسو د VIP غړیتوب ټولې ازادې شوې اسانتیاوې:</span>
                     </h6>
                     <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-300">
-                      <li className="flex items-center gap-2">
+                      <li className="flex items-center gap-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800">
                         <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>د ټولو نویو افغاني او خارجي فلمونو ننداره</span>
+                        <span>د ټولو نویو افغاني او نړیوالو فلمونو ۴کا کتنه</span>
                       </li>
-                      <li className="flex items-center gap-2">
+                      <li className="flex items-center gap-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800">
                         <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>۴کا او ۱۰۸۰پي HD خپرونې بې له ځنډه</span>
+                        <span>۴کا او ۱۰۸۰پي HD سټریم بې له بفرینګ او ځنډه</span>
                       </li>
-                      <li className="flex items-center gap-2">
+                      <li className="flex items-center gap-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800">
                         <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>د ټولو اعلاناتو په بشپړ ډول بندول</span>
+                        <span>د سوداګریزو اعلاناتو په بشپړ ډول بندول</span>
                       </li>
-                      <li className="flex items-center gap-2">
+                      <li className="flex items-center gap-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800">
                         <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>د سپورتي او کرکټ چینلونو ازاد پخش</span>
+                        <span>د ژوندیو کرکټ او ورزشي مسابقو بې وقفي خپرول</span>
                       </li>
                     </ul>
                   </div>
                 </div>
-              ) : currentUser.hasPendingVip ? (
-                <div className="p-4 rounded-2xl bg-amber-950/20 border-2 border-amber-500/40 text-center space-y-2">
-                  <div className="w-10 h-10 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto text-lg animate-bounce">
-                    ⏳
-                  </div>
-                  <h5 className="text-sm font-extrabold text-amber-300">ستاسو د VIP غوښتنه تر څېړنې لاندې ده</h5>
-                  <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
-                    زموږ اډمین به ژر ستاسو لخوا لیږل شوی د تادیې سکرین شاټ تایید کړي. تر تایید وروسته به ستاسو پروفایل په لاسي یا اتومات ډول VIP شي.
-                  </p>
-                </div>
               ) : (
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-3">
-                  <span className="text-2xl block">👤</span>
-                  <h5 className="text-xs font-bold text-slate-200">ستاسو اکونټ اوس مهال عادي (وړیا) دی</h5>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    د پریمیوم فلمونو او ۴کا سټریم د لیدلو لپاره، مهرباني وکړئ خپل اکونټ VIP کړئ.
-                  </p>
+                /* STANDARD / NON-VIP PROFILE LAYOUT (isVIP: false or Expired) */
+                <div className="space-y-4">
+                  
+                  {/* Status Banner */}
+                  {(currentUser?.isVIP || currentUser?.isVip) && remainingDays <= 0 ? (
+                    <div className="p-4 rounded-2xl bg-red-950/30 border-2 border-red-500/50 text-center space-y-2 shadow-xl">
+                      <div className="w-10 h-10 rounded-full bg-red-500/20 text-red-400 border border-red-500/40 flex items-center justify-center mx-auto text-lg animate-pulse">
+                        ⚠️
+                      </div>
+                      <h5 className="text-sm font-extrabold text-red-300">ستاسو د VIP غړیتوب وخت ختم شوی دی</h5>
+                      <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
+                        د VIP غړیتوب موده پای ته رسیدلې. د ۴کا فلمونو او بې اعلاناتو سټریم لپاره خپل اکونټ بېرته VIP کړئ.
+                      </p>
+                    </div>
+                  ) : currentUser?.hasPendingVip ? (
+                    <div className="p-4 rounded-2xl bg-amber-950/20 border-2 border-amber-500/40 text-center space-y-2 shadow-xl">
+                      <div className="w-10 h-10 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto text-lg animate-bounce">
+                        ⏳
+                      </div>
+                      <h5 className="text-sm font-extrabold text-amber-300">ستاسو د VIP غوښتنه تر څېړنې لاندې ده</h5>
+                      <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
+                        زموږ اډمین به ژر ستاسو لخوا لیږل شوی د تادیې سکرین شاټ تایید کړي. تر تایید وروسته به ستاسو اکونټ سمدستي VIP شي.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-2 shadow-lg">
+                      <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-700 text-slate-400 flex items-center justify-center mx-auto text-lg">
+                        👤
+                      </div>
+                      <h5 className="text-xs font-bold text-slate-200">ستاسو اکونټ اوس مهال عادي (وړیا) دی</h5>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        د پریمیوم ۴کا سینما او ټولو سپورتي چینلونو لیدلو لپاره VIP غړیتوب واخلئ.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Standard Upgrade Callout Box */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-950/30 via-slate-950 to-amber-950/30 border border-rose-500/30 space-y-3">
+                    <h5 className="text-xs font-black text-amber-300 uppercase tracking-wide flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>ولې VIP اکونټ لرو؟ (VIP Account Benefits)</span>
+                    </h5>
+                    <ul className="text-xs text-slate-300 space-y-1.5">
+                      <li className="flex items-center gap-2">
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>د زما ټلویزیون د ټولو نویو فلمونو او تلویزیونونو لیدل</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>بې له هیڅ اعلاناتو او بې وقفي HD کیفیت</span>
+                      </li>
+                    </ul>
+                  </div>
+
                 </div>
               )}
 
-              {/* Extension or Upgrade CTA */}
+              {/* Extension or Upgrade CTA Button */}
               <button
                 onClick={() => setViewMode('plans')}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 via-amber-600 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white font-black text-xs shadow-lg transition flex items-center justify-center gap-2"
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-600 via-amber-600 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white font-black text-xs shadow-xl transition flex items-center justify-center gap-2.5 group"
               >
-                <Crown className="w-4 h-4" />
-                <span>{currentUser.isVip ? 'د VIP غړیتوب وخت غځول / نوی کول 👑' : 'د VIP اکونټ اخیستل 👑'}</span>
+                <Crown className="w-4 h-4 text-amber-300 group-hover:scale-110 transition" />
+                <span>{isApprovedVip ? 'د VIP غړیتوب موده غځول / نوی کول 👑' : 'د VIP غړیتوب غوښتنه او نوي کول 👑'}</span>
               </button>
 
             </div>

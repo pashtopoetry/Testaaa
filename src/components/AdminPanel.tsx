@@ -607,7 +607,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       language: 'پښتو / دري',
       description: '',
       streamUrl: '',
-      telegramUrl: '',
       fallbackStreamUrl: '',
       iframeUrl: '',
       logo: 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?auto=format&fit=crop&w=300&q=80',
@@ -640,7 +639,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       language: 'پښتو دوبله',
       description: 'د پښتو ژباړل شوي او سینمایي فلم عالی او روښانه کتنه.',
       streamUrl: '',
-      telegramUrl: '',
       fallbackStreamUrl: '',
       iframeUrl: '',
       logo: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=300&q=80',
@@ -657,13 +655,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Save Channel or Movie (Add or Edit)
   const handleSaveChannel = (e: React.FormEvent) => {
     e.preventDefault();
-    const primaryUrl = formData.streamUrl?.trim() || formData.telegramUrl?.trim() || formData.iframeUrl?.trim() || formData.fallbackStreamUrl?.trim();
+    const primaryUrl = formData.streamUrl?.trim() || formData.iframeUrl?.trim() || formData.fallbackStreamUrl?.trim();
 
     if (!formData.name?.trim() || !primaryUrl) {
       alert(
         language === 'en' 
-          ? 'Please enter Name and Video/Telegram Stream Link' 
-          : 'مهرباني وکړئ د فلم/چینل نوم او د ویډیو یا تلګرام لینک حتمي داخل کړئ'
+          ? 'Please enter Name and Video Stream Link' 
+          : 'مهرباني وکړئ د فلم/چینل نوم او د ویډیو سټریم لینک حتمي داخل کړئ'
       );
       return;
     }
@@ -688,10 +686,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         frequency: formData.frequency || (isMovieType ? 'Pashto Cinema HD' : 'Yahsat 52.5°E'),
         language: formData.language || 'پښتو',
         description: formData.description || '',
-        streamUrl: formData.streamUrl?.trim() || formData.telegramUrl?.trim() || formData.iframeUrl?.trim() || '',
+        streamUrl: formData.streamUrl?.trim() || formData.iframeUrl?.trim() || '',
         fallbackStreamUrl: formData.fallbackStreamUrl?.trim() || '',
         iframeUrl: formData.iframeUrl?.trim() || '',
-        telegramUrl: formData.telegramUrl?.trim() || '',
         logo: formData.logo || (isMovieType ? 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=300&q=80' : 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?auto=format&fit=crop&w=300&q=80'),
         bannerImg: formData.bannerImg || (isMovieType ? 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1200&q=80' : 'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=1200&q=80'),
         isRadio: Boolean(formData.isRadio),
@@ -710,7 +707,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     } else if (editingChannel) {
       updatedList = channels.map((c) => {
         if (c.id === editingChannel.id) {
-          const finalStreamUrl = formData.streamUrl?.trim() || formData.telegramUrl?.trim() || formData.iframeUrl?.trim() || c.streamUrl;
+          const finalStreamUrl = formData.streamUrl?.trim() || formData.iframeUrl?.trim() || c.streamUrl;
           return {
             ...c,
             ...formData,
@@ -780,7 +777,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       c.name.toLowerCase().includes(query) || 
       c.nameEn?.toLowerCase().includes(query) || 
       (c.streamUrl && c.streamUrl.toLowerCase().includes(query)) ||
-      (c.telegramUrl && c.telegramUrl.toLowerCase().includes(query)) ||
       c.number.toString() === query;
 
     return matchesCategory && matchesQuery;
@@ -1453,7 +1449,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white text-xs font-bold transition shadow-md"
                 >
                   <Film className="w-4 h-4 text-amber-200" />
-                  <span>{language === 'en' ? 'Add Movie (Telegram Link)' : '🎬 د فلم پورته کول / اضافه کول'}</span>
+                  <span>{language === 'en' ? 'Add Movie' : '🎬 د فلم پورته کول / اضافه کول'}</span>
                 </button>
 
                 {/* Add New Channel Button */}
